@@ -1,0 +1,472 @@
+---
+title: "Normalising data with filtering in the end"
+author: "Karoline"
+date: "3/2/2023"
+output: html_document
+---
+
+# Normalising data
+
+I dette script vil jeg først normalisere data ud fra Evas script i Onedrive. Herefter vil jeg lave tabeller og barplots der angiver middelværdien af counts pr pcr replikat inden for hvert phylum.
+
+Først loader jeg data.
+
+
+## Import data and load packages
+```{r Import data and load packages}
+rm(list = ls()) #clean workspace
+library(readxl)
+
+NEW_pident70_edited_FINAL <- read_excel("../Excelfiler/NEW_pident70_edited_FINAL_order2.xlsx")
+
+#NEW_pident70_edited_FINAL <- read_excel("../../Karoline/Excelfiler/NEW_pident70_edited_FINAL.xlsx")
+
+#Nyt navn
+ 
+pident70_marine <- NEW_pident70_edited_FINAL
+as.data.frame(pident70_marine)
+
+#pick only marine OTUs
+pident70_marine <- pident70_marine[which(pident70_marine$Marine=="Yes"),] 
+
+# Select only sequences with order score below 95
+pident70_score <- pident70_marine[which(pident70_marine$order_score<95), ]
+
+# Subset further to sequences with pident.max of min. 97
+score_pident97 <- pident70_score[which(pident70_score$pident.max.best>=97), ]
+
+# Check how many OTUs were identified to these species
+pident70_marine[which(pident70_marine$species=="Balanus balanus"),] # 1 otu
+pident70_marine[which(pident70_marine$species=="Ephydatia fluviatilis"),]
+# S. armiger has an "NA" under "order", so will already be removed in the modeling 
+
+#Check
+nrow(NEW_pident70_edited_FINAL[which(NEW_pident70_edited_FINAL$Marine=="Yes"),])
+#6289
+nrow(NEW_pident70_edited_FINAL[which(NEW_pident70_edited_FINAL$Marine=="No"),])
+#1089
+nrow(NEW_pident70_edited_FINAL[which(NEW_pident70_edited_FINAL$Marine=="Unknown"),])
+#33
+6289+1089+33 #=7411 --> CORRECT
+
+#Fjerner den ene slægt, som ikke kunne navngives (denne var ikke marin, så allerede fjernet)
+COSQ <- pident70_marine[!grepl("NA", pident70_marine$phylum),] 
+
+#Jeg loader desuden metadatafilen, som indeholder clusters:
+no_control_no_sing_samples_cleaned_metadata_ASV_wise <- read.delim("../Tekstfiler/no_control_no_sing_samples_cleaned_metadata_ASV_wise.txt")
+metadata <- no_control_no_sing_samples_cleaned_metadata_ASV_wise
+
+## Load packages
+library(phyloseq)
+library(tibble)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+```
+
+## Creating af phyloseq object
+
+Først laver jeg en OTU tabel med counts pr pcr replikat ved at hive de relevante kolonner ud fra vores data.
+
+```{r Create OTU table}
+### First check where the first sample column is
+COSQ[1,1:34] #så fra kolonne 34 er der tale om sample columns
+### Check that the last column is a sample column
+n<-ncol(COSQ)
+n #3714
+COSQ[,3714]
+COSQ[1,(n-1):n] #viser første række og de to sidste kolonner
+### Extract all sample columns
+COSQ_otu <- COSQ[,34:n] 
+### Transform to a matrix
+COSQ_otu_m <- as.matrix(COSQ_otu) 
+### Construct phyloseq OTU table
+OTU = otu_table(COSQ_otu_m,taxa_are_rows=TRUE) 
+#View(OTU) #tjek
+head(OTU) #tjek
+OTU[1,c(1:5)]#tjek 
+
+```
+
+
+Nu vil jeg lave en taxonomy table, hvor jeg ekstraherer al taksonomisk information fra vores data.
+
+```{r Create taxonomy table}
+
+### Extract relevant columns from the COSQ table. Notes: Cols7-13= taxonomy, Col17 = order_score, Col26 = score.id
+COSQ_tax <- COSQ[,c(7:13,17,26)] 
+COSQ_tax[1,] #tjekker om jeg har fået det hele med.
+### Transform to a matrix
+COSQ_tax_m <- as.matrix(COSQ_tax) 
+### Construct phyloseq taxonomy table
+TAX = tax_table(COSQ_tax_m)
+#View(TAX) #kan godt se denne
+```
+
+Jeg laver desuden en sample tabel ud fra vores metadata.
+
+```{r Create sample table}
+
+samples=sample_data(metadata)
+#View(samples)
+```
+
+
+Nu laver jeg et samlet phyloseq objekt.
+
+```{r Create phyloseq object}
+## Combine metadata, OTU sample and taxonomy into one experiment-level phyloseq object
+COSQ_final <- phyloseq(OTU,TAX,samples) 
+COSQ_final
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 3681 samples ]
+#sample_data() Sample Data:       [ 3681 samples by 11 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+
+```
+
+
+# Normalisering af data
+
+Nu vil jeg normalisere data ud fra Evas script.Normaliseringsprocessen sikrer at data ikke bliver gentaget flere steder og data er entydig. Det man vil undgå er redundans (gentagelser) og inkonsistens (mangel på sammenhæng).
+
+## 1. Normalisering step 1
+
+Her Rarefier jeg først alle pcr replikater ud fra median-dybden. Jeg beholder alle pcr replikater, der har et antal reads der ligger under mediandybden, mens jeg subsampler/rarefier alle pcr replikater der har et antal reads over median-dybden. For disse hiver jeg altså tilfældige reads ud, indtil vi har et antal reads, der svarer til mediandybden.
+
+```{r Rarefy PCR replicates to median depth, keeping replicates with lower depth}
+
+### Remove PCR replicates with zero reads
+COSQ_final<-prune_samples(sample_sums(COSQ_final)>0, COSQ_final)
+#sample_sums tæller det totale antal individer, der er observeret i hvert pcr replikat.
+#prune_samples er en funktion der bruges til at rense/filtrere ikke-ønskede pcr replikater fra - i dette tilfælde de pcr replikater hvor der er nul counts
+
+COSQ_final
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 3681 samples ]
+#sample_data() Sample Data:       [ 3681 samples by 11 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+
+#Vi har ikke mistet nogen samples - der var ingen samples hvori vi slet ikke fandt nogen ASV'er
+
+### Make a table with a column indicating which PCR replicates have a read depth above the median
+readsi<-sample_sums(COSQ_final) #summerer antal reads i hvert pcr replikat 
+readsi #tjekker at kolonner stadig er lig med samples
+combinedi<-cbind(readsi, sample_data(COSQ_final)) #merger denne kolonne med sample data
+combinedi<-data.frame(combinedi) #laver om til en dataframe
+combinedi
+threshold<-round(median(combinedi$readsi)) #laver et objekt som tager medianen af summen i hvert sample data. Altså medianen af readsi objektet. Round funktionen afrunder tallet til et heltal
+threshold #15299 - dette er medianværdien for antal counts pr pcr replikat
+combinedi$q<-combinedi$readsi>threshold #laver en ny kolonne q som angiver TRUE hvis summen af reads i readsi kolonnen er større end medianværdien og FALSE hvis modsat
+
+
+
+### Transfer the column generated above to the phyloseq object
+sample_data(COSQ_final)$over_median<-combinedi$q[match(sample_data(COSQ_final)$sample_ID, combinedi$sample_ID)] #laver en ny kolonne $over_median i sample data, hvor værdierne fra kolonne q i ovenstående objekt combinedi overføres på baggrund af match mellem sample_ID navnene i hhv. combinedi og sampledata
+#View(sample_data(COSQ_final)) #nu er der en kolonne som angiver om det givne pcr replikat har en read-count værdi over medianen
+
+### Extract and then rarefy the PCR replicates with a read depth above the median
+above_t<-rarefy_even_depth(subset_samples(COSQ_final, over_median==TRUE), sample.size=as.numeric(threshold), replace=FALSE, trimOTUs = TRUE, rngseed= 13072021)
+#jeg subsampler/rarefier alle pcr replikater med en read-count værdi over medianværdien.
+#rarefy_even_depth resampler en OTU tabel, således at alle replikater har samme library size - i dette tilfælde har samme antal read counts, som er medianværdien på 15299.
+
+above_t1 <- above_t #til senere tjek
+
+#684 OTUs were removed because they are no longer present in any sample after random subsampling
+
+above_t
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 5605 taxa and 1840 samples ]
+#sample_data() Sample Data:       [ 1840 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 5605 taxa by 8 taxonomic ranks ]
+
+### Extract the PCR replicates with a read depth at or below the median
+below_t<-subset_samples(COSQ_final, over_median==FALSE) #Jeg vil gerne beholde alle replikater med en read-count værdi under medianværdien. Disse skal ikke rarefies, da de ellers bliver sorteret fra i data fordi de ikke har en readcount værdi, der når op på medianværdien
+
+below_t
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 1841 samples ]
+#sample_data() Sample Data:       [ 1841 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+
+### Merge the rarefied PCR replicates with the low-depth PCR replicates
+COSQ_merge <-merge_phyloseq(above_t, below_t)
+COSQ_merge
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 3681 samples ]
+#sample_data() Sample Data:       [ 3681 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+
+### Remove OTUs from phyloseq object, that are no longer represented in any samples.
+COSQ_rare = filter_taxa(COSQ_merge, function(x) sum(x) > 0, TRUE)
+COSQ_rare
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6222 taxa and 3681 samples ]
+#sample_data() Sample Data:       [ 3681 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6222 taxa by 8 taxonomic ranks ]
+
+
+```
+
+### 1.1 Histogram
+
+```{r create histogram}
+### Make a histogram of raw read counts
+
+#install.packages('plyr')
+library('plyr')
+library(ggplot2)
+mui <- ddply(combinedi, .(season, substrate_type), summarise, grp.mean=mean(readsi)) 
+#et objekt med sæson og subsratype fra combinedi objektet og middelværdien af readsi (summen af reads i hvert sample)
+
+library(scales)
+#DENNE KODE VIRKER IKKE, får følgende error: "Error in check_breaks_labels(breaks, labels) : object 'comma' not found"
+ggplot(combinedi, aes(x=readsi)) +
+geom_histogram(aes(fill=q), position="identity", alpha=0.6, binwidth=2500) + geom_density(alpha=0.6) + geom_vline(data=mui, aes(xintercept=grp.mean), linetype="dashed") + theme_classic() + scale_x_continuous(labels = comma) + scale_y_continuous(labels = comma) + facet_wrap(substrate_type ~ season, ncol=2, scales="free") + theme(axis.text.x = element_text(hjust = 1, vjust=0, size = 7), axis.text.y = element_text(size=7), strip.text.x = element_text(margin = margin(0.05,0,0.05,0, "cm")), strip.text = element_text(size=7),legend.title=element_text(size=7),legend.text=element_text(size=6)) +  theme(legend.key.size = unit(0.3, "cm")) + labs(title="Reads histogram plot", x ="Reads", y = "Count", fill = paste("Total reads > ",threshold,sep="")) + scale_x_continuous(limits=c(0,1000000)) + scale_y_continuous(limits=c(0,50))
+#ggsave("reads_hist_raw.pdf")
+
+#DENNE KODE VIRKER fordi jeg har say '' rundt om comma i labels = 'comma')
+#Det betyder bare at tallene på x og y akse ikke bliver komma-separerede.
+### Make histogram of raw read counts
+mui <- ddply(combinedi, .(season, substrate_type), summarise, grp.mean=mean(readsi))
+histogram <- ggplot(combinedi, aes(x=readsi)) +
+geom_histogram(aes(fill=q), position="identity", alpha=0.6, binwidth=2500) + geom_density(alpha=0.6) + geom_vline(data=mui, aes(xintercept=grp.mean), linetype="dashed") + theme_classic() + scale_x_continuous(labels = 'comma') + scale_y_continuous(labels = 'comma') + facet_wrap(substrate_type ~ season, ncol=2, scales="free") + theme(axis.text.x = element_text(hjust = 1, vjust=0, size = 7), axis.text.y = element_text(size=7), strip.text.x = element_text(margin = margin(0.05,0,0.05,0, "cm")), strip.text = element_text(size=7),legend.title=element_text(size=7),legend.text=element_text(size=6)) +  theme(legend.key.size = unit(0.3, "cm")) + labs(title="Reads histogram plot", x ="Reads", y = "Count", fill = paste("Total reads > ",threshold,sep="")) + scale_x_continuous(limits=c(0,1000000)) + scale_y_continuous(limits=c(0,50))
+histogram
+#ggsave("reads_hist_raw.pdf")
+```
+
+
+## 2. Rarefy samples to median depth
+Nu prøver jeg at rarefy data til mediandybden i stedet for til minimumsdybden, da vi herved mistede for mange OTU'er. Dvs. at nu bliver alle samples der har et antal reads, der ligger under mediandybden bliver sorteret fra?
+
+```{r Merge PCR replikates}
+
+### First, merge PCR replicates from the same field sample
+
+#merger alle PCR replicater der har samme "root" name (angiver sæson, substrattype, habitat, og hvilket nummer sample der er tale om fx	"2C10SB1", men ikke hvilket nummer pcr replikat).
+#jeg merger COSQ_rare objektet ovenfor, der allerede er blevet kørt gennem første rarefy step.
+
+merged = merge_samples(COSQ_rare, "root")
+#Warning in asMethod(object) : NAs introduced by coercion
+#HER bliver rækker lavet om til kolonner
+#OBS HER bliver rækker lavet om til kolonner i otu tabellen
+
+#View(merged@otu_table)
+#tail(merged@otu_table)
+merged@otu_table <- t(merged@otu_table) #flipper rækker og kolonner, så rækker = taxa igen og kolonner er samples
+#tail(merged@otu_table) #nu er kolonnerne lig med sample som det skal være
+#View(merged@otu_table) #virker ikke
+merged@otu_table[1,c(1:5)] #tjekker på denne måde i stedet - det ser fint ud, taxa = rows
+#View(merged@tax_table) #ser fint ud. taxa=rows
+#View(merged@sam_data) #ser fint ud - skal dog rebuilde sample data som i næste step
+
+
+merged
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6222 taxa and 936 samples ]
+#sample_data() Sample Data:       [ 936 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6222 taxa by 8 taxonomic ranks ]
+
+#View(COSQ_rare@sam_data)
+
+```
+
+
+
+Nu genopbygger jeg sample_data, hvor jeg indsætter nye kolonner som angivet nedenfor:
+
+```{r rebuild sample data}
+## Rebuild sample data, as the merge_samples function only handles merging of the OTU table
+
+#her indsætter jeg følgende nedenstående kolonner fra metadatafilen igen i sampledata i den mergede fil - da merged filen kun har sammenflettet OTU tabellen
+d<-data.frame(sample_data(merged)[,c("root","cluster","season","habitat","substrate_type","field_replicate")])
+#View(d)
+
+#laver en ny kolonne "po" der tager alle rownames og fjerner præfikset 2C - så vi har en kolonne der kun angiver clusternummer, habitat, substrattype og sample nummer fx "11RB2"	
+
+d$po<- sapply(strsplit(as.character(rownames(d)), "2C"), tail, 1)
+
+#ny kolonne der kun angiver habitat og substrattype fx "EB"
+#The gsub() function in R is used for replacement operations. The function takes the input and substitutes it against the specified values. 
+#\d angiver alle tal -> så alle tal fjernes og erstattes med ingenting
+d$pn<-gsub('\\d','', d$po) 
+
+d$pn1<-gsub(".*C(.+).*", "\\1", d$pn)
+#ny kolonne der angiver habitattype for hver prøve - hvis EB eller EW --> eelgras, hvis RB eller RW --> rocks, Resten --> sand
+d$habitat<-ifelse(d$pn1=="EW"|d$pn1=="EB", "eelgrass", ifelse(d$pn1=="RW"|d$pn1=="RB", "rocks", "sand"))  
+
+#ny kolonne, vireker på samme måde som ovenfor - hvis pn1 kolonnen indeholder et B --> sediment ellers --> water
+d$substrate_type<-ifelse(grepl("B", d$pn1, fixed=T), "sediment", "water")
+
+#ny kolonne der angiver sæson - virker som ovenstående. Hvis pn1 indeholder 2C --> autumn - ellers --> spring
+d$season<-ifelse(grepl("2C", as.character(rownames(d)), fixed=T), "autumn", "spring")
+
+#ny kolonne med sample_root
+d$root<-rownames(d)
+
+#ny kolonne der fjerner alle bogstaver (\\D) fra root kolonnen og derfor kun angiver tallene
+#dvs sæson ('' eller '2'), clusternummer og sample nummer. 
+d$pn<-gsub('\\D','_', d$root)
+
+#ny kolonne der kun angiver clusternummer - jeg forstår hvordan denne kode virker
+d$pn2<-gsub(".*_(.+)__.*", "\\1", d$pn)
+
+#laver ovenstående kolonne om til integer og indsætter i ny kolonne "cluster"
+d$cluster<-as.integer(d$pn2)
+
+#til sidst gendanner jeg sample datafilen og indsætter de nye kolonner jeg har lavet
+
+sample_data(merged)<-d[,c("root","cluster","season","habitat","substrate_type","field_replicate")]
+
+#View(sample_data(merged)) #her har vi en samlet sample fil, hvor alle PCR replikater er merged og hvor alle relevante kolonner er indeholdt
+```
+
+
+Nu vil jeg lave en tabel, der indeholder en kolonne som angiver, hvilke samples, der har en read depth over medianen - dem vil vi gerne beholde.
+
+```{r rarefy samples to median read depth}
+### Make a table with a column indicating which samples have a read depth above the median
+reads<-sample_sums(merged) #laver et objekt med antallet/summen af reads pr sample
+#View(reads)
+combined<-cbind(reads, sample_data(merged)) #comibinerer reads objektet med sample_data
+#denne har nu en kolonne der angiver summen af reads i hvert sample (obs - der er 3 samples i hvert cluster)
+combined<-data.frame(combined)
+#View(combined)
+thres<-round(median(combined$reads)) #laver nu et objekt som beregner medianen-værdien af reads. Tager altså altså ALLE reads i hvert sample og beregner medianen
+#47688
+
+#Laver ny kolonne "q" der angiver hvorvidt det givne sample har en reads værdi (sum af reads) der er over "TRUE" eller under "FALSE" medianværdien
+combined$q<-combined$reads>thres
+
+
+### Transfer the column generated above to the phyloseq object
+sample_data(merged)$over_median<-combined$q[match(sample_data(merged)$root, combined$root)]
+#View(sample_data(merged)) #har nu en kolonne "over_median", der angiver hvorvidt det givne sample har en reads værdi over eller under median-værdien
+
+
+### Extract and then rarefy the samples with a read depth above the median
+#her laver jeg et nyt objekt "above_t", hvor jeg ekstraherer alle de samples med en read-værdi større end medianen "over_median==TRUE" og trimmer dem randomly, så alle får samme library size - dvs der hives OTU'er ud randomly så alle samples får en read-dybde på median-værdien
+above_t<-rarefy_even_depth(subset_samples(merged, over_median==TRUE), sample.size=as.numeric(thres), replace=FALSE, trimOTUs = TRUE, rngseed= 13072021)
+
+
+#DER ER BLEVET FJERNET 851 OTU'ER
+# "851 OTUs were removed because they are no longer present in any sample after random subsampling"
+
+### Extract the samples with a read depth at or below the median
+#Jeg ekstraherer her 
+below_t<-subset_samples(merged, over_median==FALSE)
+
+### Merge the rarefied samples with the low-depth samples
+COSQ_merge2<-merge_phyloseq(above_t, below_t)
+COSQ_merge2
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6222 taxa and 936 samples ]
+#sample_data() Sample Data:       [ 936 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6222 taxa by 8 taxonomic ranks ]
+
+### Remove OTUs from phyloseq object, that are no longer represented in any samples
+COSQ_rare2 = filter_taxa(COSQ_merge2, function(x) sum(x) > 0, TRUE)
+
+### Check how many OTUs are left
+COSQ_rare2
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6183 taxa and 936 samples ]
+#sample_data() Sample Data:       [ 936 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6183 taxa by 8 taxonomic ranks ]
+COSQ_rare
+
+#tjekker elementerne i cosq_rare2
+COSQ_rare2@otu_table[1,c(1:5)] #taxa = rows
+COSQ_rare2@tax_table[1,c(1:5)] #taxa = rows
+#View(COSQ_rare2@sam_data) #samples = rows
+
+saveRDS(COSQ_rare2,"../RDS/COSQ_rare2_correct_score_tax.rds") #gemmer normalisering step2 som RDS fil
+#saveRDS(COSQ_rare,"COSQ_rare_correct.rds") #gemmer normalisering step1 som RDS fil
+
+x <- readRDS("C:/Users/Karoline/OneDrive/Speciale/G. Databehandling NYT KORREKT data/RDS filer/COSQ_rare2_correct.rds")
+x
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6183 taxa and 936 samples ]
+#sample_data() Sample Data:       [ 936 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6183 taxa by 8 taxonomic ranks ]
+
+x@otu_table[1,c(1:5)] #check
+x@tax_table[1,c(1:5)] #check
+x@sam_data[1,c(1:5)]
+#OBSOBSOBS 
+#når vi går fra COSQ_rare (normalisering step1) til COSQ_rare2 (normalisering step 2) bytter rækker og kolonner plads i OTU tabellen så samples bliver til rækker i stedet for species
+
+#se her: 
+#View(COSQ_rare@otu_table)
+#View(COSQ_rare2@otu_table)
+```
+
+
+
+
+## CHECK
+
+I dette step tjekker jeg efter hvor mange OTU'er der er tilstede før og efter normalisering
+
+```{r Check OTU'er}
+#FØR NORMALISERING step 1 og 2
+
+subset_samples(COSQ_final, over_median==TRUE)
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 1840 samples ]
+#sample_data() Sample Data:       [ 1840 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+COSQ_final
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6289 taxa and 3681 samples ]
+#sample_data() Sample Data:       [ 3681 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6289 taxa by 8 taxonomic ranks ]
+
+subset_samples(merged, over_median==TRUE)
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 6222 taxa and 468 samples ]
+#sample_data() Sample Data:       [ 468 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 6222 taxa by 8 taxonomic ranks ]
+
+
+
+
+#CHECK
+
+#efter første step af normalisering - alle pcr replikater over medianværdien
+above_t1
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 5605 taxa and 1840 samples ]
+#sample_data() Sample Data:       [ 1840 samples by 12 sample variables ]
+#tax_table()   Taxonomy Table:    [ 5605 taxa by 8 taxonomic ranks ]
+
+COSQ_final
+#INden normalisering første step var der 6289 taxa (COSQ_final objektet)
+#efter normalisering var der 5605
+#6289-5605= 684 - HVilket stemmer overens med det output R gav ved normalisering efter første step - at 267 var blevet fjernet. 
+
+## efter andet step af normalisering - alle samples over medianværdien
+above_t
+#phyloseq-class experiment-level object
+#otu_table()   OTU Table:         [ 5371 taxa and 468 samples ]
+#sample_data() Sample Data:       [ 468 samples by 7 sample variables ]
+#tax_table()   Taxonomy Table:    [ 5371 taxa by 8 taxonomic ranks ]
+
+
+#Ovenstående skal sammenlignes med normalisering efter step 1 (subset_samples(merged, over_median==TRUE))
+#Her var der 6222 taxa, mens der efter normalisering step 2 var 5371 taxa = der er blevet filtreret 851 OTU'er fra - hvilket svarer til det tal som R giver i output
+
+
+#For at tjekke om de
+
+#vi går fra 3681 samples i COSQ rare til 936 i COSQ rare 2, fordi alle 4 pcr replikater bliver slået sammen inden for hvert sample 
+#3681/4 = 920,25 --> grunden til at vi ikke får 936 er at der i nogle af samples ikke er 4 pcr replikater, fordi der er for få reads/ingen reads i nogle af replikaterne
+#Husk at vi har fjernet nogle samples vha. prune funktionen
+
+
+```
+
+
+
+
+

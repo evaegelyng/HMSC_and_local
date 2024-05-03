@@ -1,0 +1,445 @@
+---
+title: "18S analyses"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.path = "images/")
+```
+
+```{r libraries, message=FALSE}
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+library(phyloseq)
+library(Rarity)
+library(VennDiagram)
+```
+
+```{r load data}
+
+## Get OTU table
+otus1<-read.table("../Tekstfiler/f_otu_ncbi_5_01_22.txt")
+
+## Get tax table
+taxa<-read.table("../Tekstfiler/f_tax_ncbi_5_01_22.txt")
+
+###Make phyloseq object
+tax_mat_b<-as.matrix(taxa)
+OTU = otu_table(otus1, taxa_are_rows = FALSE)
+TAX_b = tax_table(tax_mat_b)
+p_NCBI = phyloseq(OTU, TAX_b)
+
+##Get metadata
+metadata<-read.table("../Tekstfiler/f_ncbi_metadata_5_01_22.txt", sep="\t", header=T)
+
+#Create extra variables
+metadata$sshc<-paste(metadata$substrate_type, metadata$season, metadata$habitat, metadata$cluster, sep="_")
+metadata$ssc<-paste(metadata$substrate_type, metadata$season, metadata$cluster, sep="_")
+metadata$stc<-paste(metadata$substrate_type, metadata$cluster, sep="_")
+metadata$ssh<-paste(metadata$substrate_type, metadata$season, metadata$habitat, sep="_")
+
+sampledata = sample_data(data.frame(metadata, row.names=metadata$sample_root, stringsAsFactors=FALSE))
+
+DADAwang1 = merge_phyloseq(p_NCBI, sampledata)
+
+##Remove cluster 2, which was only sampled in one season
+DADAwang1<-subset_samples(DADAwang1, !cluster==2)
+
+## Get cleaned OTU table
+otus<-data.frame(otu_table(DADAwang1),check.names=F)
+
+## Get taxonomy
+tax<-data.frame(tax_table(DADAwang1))
+
+## Get more metadata
+areas<-read.table("../Tekstfiler/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+metadata$New_Area<-areas$New_Area[match(metadata$cluster,areas$Cluster)]
+```
+
+```{r prepare data}
+
+otus$sample<-factor(substr(row.names(otus),
+                          1,
+                          nchar(row.names(otus))-1))
+
+#Check the number of biological replicates per sample
+bio_reps<-otus %>% group_by(sample) %>% summarise(n=n())
+#Select only samples with 3 replicates
+#three_reps<-filter(bio_reps,n=="3")
+#length(unique(sp_97_t$sample))
+#sp_97_3<-sp_97_t[sp_97_t$sample %in% three_reps$sample, ]
+
+# Aggregate replicate samples, taking the mean of read counts
+rep_agg<-aggregate(. ~ sample, otus, function(x) mean(x))
+row.names(rep_agg)<-rep_agg$sample
+rep_agg<-within(rep_agg,rm(sample))
+# Save object for boxplots
+rep_agg_pa<-rep_agg
+
+metadata$sample<-factor(substr(row.names(metadata),
+                          1,
+                          nchar(row.names(metadata))-1))
+rep_agg$Substrate<-metadata$substrate_type[match(row.names(rep_agg),metadata$sample)]
+
+#Subset data to sediment and water
+sed<-rep_agg[rep_agg$Substrate=="sediment",]
+sed<-within(sed,rm(Substrate))
+wat<-rep_agg[rep_agg$Substrate=="water",]
+wat<-within(wat,rm(Substrate))
+
+## Remove empty samples
+sed<-sed[rowSums(sed[])>0,] 
+wat<-wat[rowSums(wat[])>0,] 
+
+# Remove empty colums (species)
+sed<-sed[colSums(sed)>0]
+wat<-wat[colSums(wat)>0]
+
+##Convert to presence/absence
+sed[sed>0]<-1
+wat[wat>0]<-1
+```
+
+```{r barplot}
+
+#ggplot(min100,aes(x=reorder(min100$final.id,min100$num_samples),y=min100$num_samples,fill=min100$final.id)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ theme(legend.position = "none") + labs(x="",y="Number of samples")
+
+```
+
+
+```{r boxplot rich}
+
+# Subset to clusters where all three habitats were sampled
+metadata$sc<-paste(metadata$season,metadata$cluster,sep="_")
+rep_agg_pa$sc<-metadata$sc[match(row.names(rep_agg_pa),metadata$sample)]
+length(unique(rep_agg_pa$sc)) # 62
+hab_reps<-rep_agg_pa %>% group_by(sc) %>% summarise(n=n())
+six_hreps<-filter(hab_reps,n=="6")
+nrow(six_hreps) # 32
+rep_6hab<-rep_agg_pa[rep_agg_pa$sc %in% six_hreps$sc, ]
+
+##Convert to presence/absence
+rep_6hab<-within(rep_6hab,rm(sc))
+rep_6hab[rep_6hab>0]<-1
+
+# Calculate MOTU richness per sample
+rep_6hab$rich<-rowSums(rep_6hab)
+
+rep_6hab$Substrate<-metadata$substrate_type[match(row.names(rep_6hab),metadata$sample)]
+rep_6hab$habitat<-metadata$habitat[match(row.names(rep_6hab),metadata$sample)]
+rep_6hab$season<-metadata$season[match(row.names(rep_6hab),metadata$sample)]
+
+# grouped boxplot
+box_rich<-ggplot(rep_6hab, aes(x=habitat, y=rich, fill=Substrate)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = c("sediment","water"),
+                     labels = c("sediment","water")) +
+  xlab("") + ylab("MOTU richness")+
+  facet_grid(. ~ season)+ 
+  theme(legend.position = "top", text = element_text(size = 18))
+
+ggsave(file="../Plots/Boxplots/18S_rich.png",box_rich)
+```
+
+
+```{r venn sed}
+
+# Subset to clusters where all three habitats were sampled
+sed$sc<-metadata$sc[match(row.names(sed),metadata$sample)]
+length(unique(sed$sc)) # 63
+hab_reps<-sed %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+sed_3hab<-sed[sed$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+sed_3hab$habitat<-metadata$habitat[match(row.names(sed_3hab),metadata$sample)]
+
+eel<-sed_3hab[sed_3hab$habitat=="eelgrass",]
+rock<-sed_3hab[sed_3hab$habitat=="rocks",]
+sand<-sed_3hab[sed_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/18S_sed.png',
+  cat.cex = 2,
+  cex=2,
+  margin=0.05,
+  cat.fontface = "bold",
+  output=T
+)
+
+sed<-within(sed,rm(sc))
+```
+
+```{r venn wat}
+
+# Subset to clusters where all three habitats were sampled
+wat$sc<-metadata$sc[match(row.names(wat),metadata$sample)]
+length(unique(wat$sc)) # 63
+hab_reps<-wat %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+wat_3hab<-wat[wat$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+wat_3hab$habitat<-metadata$habitat[match(row.names(wat_3hab),metadata$sample)]
+
+eel<-wat_3hab[wat_3hab$habitat=="eelgrass",]
+rock<-wat_3hab[wat_3hab$habitat=="rocks",]
+sand<-wat_3hab[wat_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make OTU list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/18S_wat.png',
+  cat.cex = 2,
+  cex=2,
+  margin=0.05,
+  cat.fontface = "bold",
+  output=T
+)
+
+wat<-within(wat,rm(sc))
+```
+```{r venn sed class}
+
+# Collapse otu table to class level
+sed_3hab<-within(sed_3hab,rm(sc,habitat))
+sed_3hab_t<-as.data.frame(t(sed_3hab))
+sed_3hab_t<-apply(sed_3hab_t, c(1,2), function(x) as.numeric(x))
+sed_3hab_t<-as.data.frame(sed_3hab_t)
+sed_3hab_t$class<-tax$Class[match(row.names(sed_3hab_t),row.names(tax))]
+sed_3hab_agg<-aggregate(. ~ class, sed_3hab_t, function(x) sum(x))
+
+# Check for OTUs with unknown class
+subset(sed_3hab_agg,class=="NA") # No NAs
+
+# Set row names to class names
+row.names(sed_3hab_agg)<-sed_3hab_agg$class
+sed_3hab_agg<-within(sed_3hab_agg,rm(class))
+
+# Subset to each habitat
+sed_3hab_new<-as.data.frame(t(sed_3hab_agg))
+sed_3hab_new$habitat<-metadata$habitat[match(row.names(sed_3hab_new),metadata$sample)]
+
+eel<-sed_3hab_new[sed_3hab_new$habitat=="eelgrass",]
+rock<-sed_3hab_new[sed_3hab_new$habitat=="rocks",]
+sand<-sed_3hab_new[sed_3hab_new$habitat=="sand",]
+
+eel<-within(eel,rm(habitat))
+rock<-within(rock,rm(habitat))
+sand<-within(sand,rm(habitat))
+
+# Make class list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_class<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_class<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_class<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_class,rock_class,sand_class),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/18S_class_sed.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+#sed<-within(sed,rm(sc))
+```
+
+```{r venn wat class}
+
+# Collapse otu table to class level
+wat_3hab<-within(wat_3hab,rm(sc,habitat))
+wat_3hab_t<-as.data.frame(t(wat_3hab))
+wat_3hab_t<-apply(wat_3hab_t, c(1,2), function(x) as.numeric(x))
+wat_3hab_t<-as.data.frame(wat_3hab_t)
+wat_3hab_t$class<-tax$Class[match(row.names(wat_3hab_t),row.names(tax))]
+wat_3hab_agg<-aggregate(. ~ class, wat_3hab_t, function(x) sum(x))
+
+# Check for OTUs with unknown class
+subset(wat_3hab_agg,class=="NA") # No NAs
+
+# Set row names to class names
+row.names(wat_3hab_agg)<-wat_3hab_agg$class
+wat_3hab_agg<-within(wat_3hab_agg,rm(class))
+
+# Subset to each habitat
+wat_3hab_new<-as.data.frame(t(wat_3hab_agg))
+wat_3hab_new$habitat<-metadata$habitat[match(row.names(wat_3hab_new),metadata$sample)]
+
+eel<-wat_3hab_new[wat_3hab_new$habitat=="eelgrass",]
+rock<-wat_3hab_new[wat_3hab_new$habitat=="rocks",]
+sand<-wat_3hab_new[wat_3hab_new$habitat=="sand",]
+
+eel<-within(eel,rm(habitat))
+rock<-within(rock,rm(habitat))
+sand<-within(sand,rm(habitat))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_class<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_class<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_class<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_class,rock_class,sand_class),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/18S_class_wat.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+#wat<-within(wat,rm(sc))
+```
+
+```{r nmds sed}
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+#ks<-c(3,3,4,4)
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(sed, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$New_Area <- metadata$New_Area[match(row.names(site_scrs), metadata$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
+
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
+  geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c("#1B9E77","#E7298A","#A6761D","#666666"),
+                     name = "", breaks = sort(unique(metadata$New_Area)),
+                     labels = sort(unique(metadata$New_Area))) +
+  geom_point(data = cent, size = 5) +
+  geom_point(alpha=0.4) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))
+
+  write.table(site_scrs,file=paste("../Tekstfiler/Jaccard_18S_sed_All.txt",sep=""))
+```
+
+```{r nmds wat}
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+#ks<-c(3,3,4,4)
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$New_Area <- metadata$New_Area[match(row.names(site_scrs), metadata$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
+
+  nmds_wat<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
+  geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c("#1B9E77","#E7298A","#A6761D","#666666"),
+                     name = "", breaks = sort(unique(metadata$New_Area)),
+                     labels = sort(unique(metadata$New_Area))) +
+  geom_point(data = cent, size = 5) +
+  geom_point(alpha=0.4) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))
+
+  ggsave(file="../Plots/NMDS/NMDS_18S_both_4areas_All.png",ggarrange(nmds_sed,nmds_wat,ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+  
+  write.table(site_scrs,file=paste("../Tekstfiler/Jaccard_18S_wat_All.txt",sep=""))
+```
+
+```{r nmds both}
+
+##Convert to presence/absence
+both<-within(rep_agg,rm(Substrate))
+both[both>0]<-1
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(both, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$Substrate <- metadata$substrate_type[match(row.names(site_scrs), metadata$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ Substrate, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("Substrate", "oNMDS1", "oNMDS2")), by = "Substrate", sort=FALSE)
+
+  nmds_both<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = Substrate)) + 
+  #geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = unique(metadata$substrate_type),
+                     labels = unique(metadata$substrate_type)) +
+  #geom_point(data = cent, size = 5) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+  ggsave(nmds_both,file=paste("../Plots/NMDS/NMDS_18S_both.png",sep=""))
+```

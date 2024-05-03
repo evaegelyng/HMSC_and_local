@@ -1,0 +1,26 @@
+# temporary data #
+###################
+tmp/
+tmp/.RData
+tmp/.RDataTmp
+
+# data #
+###################
+backup/data/
+
+# results #
+###################
+results/
+
+# R logs #
+###################
+.RData
+.RDataTmp
+.Rhistory
+results/.RData
+results/.Rhistory
+*.sh*.out
+
+# Unused scripts #
+###################
+backup/scripts/Not_used/

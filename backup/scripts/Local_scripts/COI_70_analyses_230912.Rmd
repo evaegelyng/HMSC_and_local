@@ -1,0 +1,428 @@
+---
+title: "MOTU analyses"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-09-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, message=FALSE}
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+library(phyloseq)
+library(Rarity)
+library(VennDiagram)
+```
+
+```{r load motu data}
+
+## Get phyloseq object
+COSQ_rare2_70 <- readRDS("../RDS/COSQ_rare2_correct.rds")
+
+## Remove cluster 2 (which was only sampled in 1 season)
+COSQ_70_no_c2<-subset_samples(COSQ_rare2_70,!cluster==2)
+
+## Get OTU table
+sp_70<-data.frame(otu_table(COSQ_70_no_c2),check.names=F)
+
+## Get taxonomy
+tax_70<-data.frame(tax_table(COSQ_70_no_c2))
+
+## Get sample data
+sam_data<-data.frame(sample_data(COSQ_70_no_c2))
+
+## Get area names
+areas<-read.table("../Tekstfiler/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+sam_data$New_Area<-areas$New_Area[match(sam_data$cluster,areas$Cluster)]
+```
+
+```{r prepare data}
+
+sp_70_t<-as.data.frame(t(sp_70))
+
+sp_70_t$sample<-factor(substr(row.names(sp_70_t),
+                          1,
+                          nchar(row.names(sp_70_t))-1))
+
+#Select only samples with 3 replicates
+bio_reps<-sp_70_t %>% group_by(sample) %>% summarise(n=n())
+three_reps<-filter(bio_reps,n=="3")
+length(unique(sp_70_t$sample))
+sp_70_3<-sp_70_t[sp_70_t$sample %in% three_reps$sample, ]
+
+# Aggregate replicate samples, taking the sum of read counts
+rep_agg<-aggregate(. ~ sample, sp_70_3, function(x) sum(x))
+row.names(rep_agg)<-rep_agg$sample
+rep_agg<-within(rep_agg,rm(sample))
+# Save object for boxplots
+rep_agg_pa<-rep_agg
+
+sam_data$sample<-factor(substr(row.names(sam_data),
+                          1,
+                          nchar(row.names(sam_data))-1))
+
+rep_agg$Substrate<-sam_data$substrate_type[match(row.names(rep_agg),sam_data$sample)]
+
+#Subset data to sediment and water
+sed<-rep_agg[rep_agg$Substrate=="sediment",]
+sed<-within(sed,rm(Substrate))
+wat<-rep_agg[rep_agg$Substrate=="water",]
+wat<-within(wat,rm(Substrate))
+
+## Remove empty samples
+sed<-sed[rowSums(sed[])>0,] 
+wat<-wat[rowSums(wat[])>0,] 
+
+# Remove empty colums (species)
+sed<-sed[colSums(sed)>0]
+wat<-wat[colSums(wat)>0]
+
+##Convert to presence/absence
+sed[sed>0]<-1
+wat[wat>0]<-1
+```
+```{r boxplot rich}
+
+# Subset to clusters where all three habitats were sampled
+sam_data$sc<-paste(sam_data$season,sam_data$cluster,sep="_")
+rep_agg_pa$sc<-sam_data$sc[match(row.names(rep_agg_pa),sam_data$sample)]
+length(unique(rep_agg_pa$sc)) # 62
+hab_reps<-rep_agg_pa %>% group_by(sc) %>% summarise(n=n())
+six_hreps<-filter(hab_reps,n=="6")
+nrow(six_hreps) # 28
+rep_6hab<-rep_agg_pa[rep_agg_pa$sc %in% six_hreps$sc, ]
+
+##Convert to presence/absence
+rep_6hab<-within(rep_6hab,rm(sc))
+rep_6hab[rep_6hab>0]<-1
+
+# Calculate MOTU richness per sample
+rep_6hab$rich<-rowSums(rep_6hab)
+
+rep_6hab$Substrate<-sam_data$substrate_type[match(row.names(rep_6hab),sam_data$sample)]
+rep_6hab$habitat<-sam_data$habitat[match(row.names(rep_6hab),sam_data$sample)]
+rep_6hab$season<-sam_data$season[match(row.names(rep_6hab),sam_data$sample)]
+
+# grouped boxplot
+box_rich<-ggplot(rep_6hab, aes(x=habitat, y=rich, fill=Substrate)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = c("sediment","water"),
+                     labels = c("sediment","water")) +
+  xlab("") + ylab("MOTU richness") +
+  facet_grid(. ~ season)+ 
+  theme(legend.position = "top", text = element_text(size = 18))
+
+ggsave(file="../Plots/Boxplots/COI_MOTU_rich.png",box_rich)
+```
+
+```{r venn both}
+
+# Subset to clusters where all three habitats were sampled
+rep_agg$sc<-sam_data$sc[match(row.names(rep_agg),sam_data$sample)]
+length(unique(rep_agg$sc)) # 62
+hab_reps<-rep_agg %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="6")
+nrow(three_hreps) # 28
+both_3hab<-rep_agg[rep_agg$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+both_3hab$habitat<-sam_data$habitat[match(row.names(both_3hab),sam_data$sample)]
+
+eel<-both_3hab[both_3hab$habitat=="eelgrass",]
+rock<-both_3hab[both_3hab$habitat=="rocks",]
+sand<-both_3hab[both_3hab$habitat=="sand",]
+
+# Remove unnecessary columns
+eel<-within(eel,rm(habitat,sc,Substrate))
+rock<-within(rock,rm(habitat,sc,Substrate))
+sand<-within(sand,rm(habitat,sc,Substrate))
+
+##Convert to presence/absence
+eel[eel>0]<-1
+rock[rock>0]<-1
+sand[sand>0]<-1
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/motus_both.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+rep_agg<-within(rep_agg,rm(sc))
+```
+
+```{r venn sed}
+
+# Subset to clusters where all three habitats were sampled
+sam_data$sc<-paste(sam_data$season,sam_data$cluster,sep="_")
+sed$sc<-sam_data$sc[match(row.names(sed),sam_data$sample)]
+length(unique(sed$sc)) # 62
+hab_reps<-sed %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+sed_3hab<-sed[sed$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+sed_3hab$habitat<-sam_data$habitat[match(row.names(sed_3hab),sam_data$sample)]
+
+eel<-sed_3hab[sed_3hab$habitat=="eelgrass",]
+rock<-sed_3hab[sed_3hab$habitat=="rocks",]
+sand<-sed_3hab[sed_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/motus_sed.png',
+  cat.cex = 2,
+  cex=2,
+  margin=0.05,
+  cat.fontface = "bold",
+  output=T
+)
+
+sed<-within(sed,rm(sc))
+```
+
+```{r venn wat}
+
+# Subset to clusters where all three habitats were sampled
+wat$sc<-sam_data$sc[match(row.names(wat),sam_data$sample)]
+length(unique(wat$sc)) # 62
+hab_reps<-wat %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+wat_3hab<-wat[wat$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+wat_3hab$habitat<-sam_data$habitat[match(row.names(wat_3hab),sam_data$sample)]
+
+eel<-wat_3hab[wat_3hab$habitat=="eelgrass",]
+rock<-wat_3hab[wat_3hab$habitat=="rocks",]
+sand<-wat_3hab[wat_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/motus_wat.png',
+  cat.cex = 2,
+  cex=2,
+  margin=0.05,
+  cat.fontface = "bold",
+  output=T
+)
+
+wat<-within(wat,rm(sc))
+```
+
+```{r nmds}
+
+##Convert to presence/absence
+both<-within(rep_agg,rm(Substrate))
+both[both>0]<-1
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(both, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$Substrate <- sam_data$substrate_type[match(row.names(site_scrs), sam_data$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ Substrate, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("Substrate", "oNMDS1", "oNMDS2")), by = "Substrate", sort=FALSE)
+
+  nmds_both<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = Substrate)) + 
+  scale_color_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = unique(sam_data$substrate_type),
+                     labels = unique(sam_data$substrate_type)) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+  ggsave(nmds_both,file=paste("../Plots/NMDS/NMDS_70_both.png",sep=""))
+```
+
+```{r nmds sed habitat}
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  sed_nmds <- metaMDS(sed, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
+
+  site_scrs <- as.data.frame(scores(sed_nmds, display = "sites"))
+  site_scrs$habitat <- sam_data$habitat[match(row.names(site_scrs), sam_data$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = habitat)) + 
+  scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = unique(sam_data$habitat),
+                     labels = unique(sam_data$habitat)) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+  ggsave(nmds_sed,file="../Plots/NMDS/NMDS_70_sed_hab.png")
+```
+
+```{r nmds wat habitat}
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  wat_nmds <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs_w <- as.data.frame(scores(wat_nmds, display = "sites"))
+  site_scrs_w$habitat <- sam_data$habitat[match(row.names(site_scrs_w), sam_data$sample)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs_w, FUN = mean)
+  segs <- merge(site_scrs_w, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  nmds_wat<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2, colour = habitat)) + 
+  scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = unique(sam_data$habitat),
+                     labels = unique(sam_data$habitat)) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+ggsave(nmds_wat,file="../Plots/NMDS/NMDS_70_wat_hab.png")
+```
+
+```{r nmds sed salinity}
+
+## Get salinities
+coord<-read.table("../Tekstfiler/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+sam_data$new_name<-paste(sam_data$season,sam_data$cluster,sam_data$habitat,sep="_")
+sam_data$salinity <- coord$Salinity[match(sam_data$new_name,row.names(coord))]
+
+site_scrs$salinity <- sam_data$salinity[match(row.names(site_scrs), sam_data$sample)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs, FUN = mean)
+segs <- merge(site_scrs, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+  # set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+breaks
+
+cols <- RColorBrewer::brewer.pal(9, "Spectral")
+cols
+
+plots<-list()
+
+  nmds_sal<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = salinity)) + 
+  scale_fill_stepsn(colours = cols,
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+  
+  plots[[1]]<-nmds_sal
+  
+  #ggsave(nmds_sal,file="../Plots/NMDS/NMDS_70_sed_sal.png")
+```
+
+```{r nmds wat salinity}
+
+## Get salinities
+site_scrs_w$salinity <- sam_data$salinity[match(row.names(site_scrs_w), sam_data$sample)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs_w, FUN = mean)
+segs <- merge(site_scrs_w, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+  # set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+breaks
+
+cols <- RColorBrewer::brewer.pal(9, "Spectral")
+cols
+
+plots_wat<-list()
+
+  nmds_sal_w<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2, colour = salinity)) + 
+  scale_fill_stepsn(colours = cols,
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+  
+  plots_wat[[1]]<-nmds_sal_w
+  
+  #ggsave(nmds_sal_w,file="../Plots/NMDS/NMDS_70_wat_sal.png")
+  
+  ggsave(file="../Plots/NMDS/NMDS_70_both_sal.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+```
