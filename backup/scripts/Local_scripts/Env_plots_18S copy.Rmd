@@ -20,6 +20,8 @@ library(ggpmisc)
 
 ## Get metadata
 metadata<-read.table("../Tekstfiler/f_ncbi_metadata_5_01_22.txt", sep="\t", header=T)
+#Create extra metadata variables
+metadata$sshc<-paste(metadata$substrate_type, metadata$season, metadata$habitat, metadata$cluster, sep="_")
 ## Get sea distances
 areas<-read.table("../Tekstfiler/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
 ## Get salinities
@@ -30,12 +32,9 @@ coord<-read.table("../Tekstfiler/merged_metadata_230427.txt", sep="\t", row.name
 ```{r sed dist}
 
 jaccard<-read.table("../Tekstfiler/Jaccard_18S_sed_all.txt")
-metadata$sample<-factor(substr(row.names(metadata),
-                          1,
-                          nchar(row.names(metadata))-1))
 metadata$sea_dist<-areas$dist_from_C33.km[match(metadata$cluster,areas$Cluster)]
-jaccard$sea_dist<-metadata$sea_dist[match(row.names(jaccard),metadata$sample)]
-jaccard$habitat<-metadata$habitat[match(row.names(jaccard),metadata$sample)]
+jaccard$sea_dist<-metadata$sea_dist[match(row.names(jaccard),metadata$sshc)]
+jaccard$habitat<-metadata$habitat[match(row.names(jaccard),metadata$sshc)]
 
 p<-ggplot(jaccard, aes(x=sea_dist, y=NMDS1, shape = habitat, lty=habitat)) +
    geom_point(size=2,aes(color=New_Area))+
@@ -51,8 +50,8 @@ p
 ```{r wat dist}
 
 jaccard_w<-read.table("../Tekstfiler/Jaccard_18S_wat_all.txt")
-jaccard_w$sea_dist<-metadata$sea_dist[match(row.names(jaccard_w),metadata$sample)]
-jaccard_w$habitat<-metadata$habitat[match(row.names(jaccard_w),metadata$sample)]
+jaccard_w$sea_dist<-metadata$sea_dist[match(row.names(jaccard_w),metadata$sshc)]
+jaccard_w$habitat<-metadata$habitat[match(row.names(jaccard_w),metadata$sshc)]
 
 p2<-ggplot(jaccard_w, aes(x=sea_dist, y=NMDS1, shape = habitat, lty=habitat)) +
    geom_point(size=2,aes(color=New_Area))+
@@ -70,7 +69,7 @@ ggsave(file="../Plots/Env_plots/Sea_dist_18S_both.png",ggarrange(p,p2,ncol=2,nro
 
 # Add salinity values to dataframe with NMDS scores
 metadata$new_name<-paste(metadata$season,metadata$cluster,metadata$habitat,sep="_")
-jaccard$new_name<-metadata$new_name[match(row.names(jaccard),metadata$sample)]
+jaccard$new_name<-metadata$new_name[match(row.names(jaccard),metadata$sshc)]
 jaccard$salinity<-coord$Salinity[match(jaccard$new_name,row.names(coord))]
 
 p3<-ggplot(jaccard, aes(x=salinity, y=NMDS1, shape = habitat, lty=habitat)) +
@@ -86,7 +85,7 @@ p3
 
 ```{r salinity wat}
 
-jaccard_w$new_name<-metadata$new_name[match(row.names(jaccard_w),metadata$sample)]
+jaccard_w$new_name<-metadata$new_name[match(row.names(jaccard_w),metadata$sshc)]
 jaccard_w$salinity<-coord$Salinity[match(jaccard_w$new_name,row.names(coord))]
 
 p4<-ggplot(jaccard_w, aes(x=salinity, y=NMDS1, shape = habitat, lty=habitat)) +

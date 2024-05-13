@@ -25,7 +25,7 @@ pc_bs$FishingTrawling<-spat$FishingTrawling[match(row.names(pc_bs),row.names(spa
 
 # Load bacterial richness data
 bac<-read.table("results/bact_rich.tsv", sep="\t", header=T, row.names=1)
-pc_bs$sshc<-paste("sediment",pc_bs$season,pc_bs$habitat,pc_bs$cluster,sep="_")
+pc_bs$sshc<-paste("water",pc_bs$season,pc_bs$habitat,pc_bs$cluster,sep="_")
 pc_bs$bac_rich<-bac$rich[match(pc_bs$sshc,rownames(bac))]
 
 #Load distance matrix

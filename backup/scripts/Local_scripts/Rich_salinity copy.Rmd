@@ -22,9 +22,8 @@ salinity<-read.table("../Tekstfiler/merged_metadata_230427.txt",header=TRUE)
 
 sed_18S<-read.table("../Tekstfiler/Species_data_18S_filt_sed.tsv",row.names=1)
 wat_18S<-read.table("../Tekstfiler/Species_data_18S_filt_wat.tsv",row.names=1)
-sed_COI<-read.table("../Tekstfiler/species_sed_COI.txt",row.names=1)
-#wat_COI<-read.table("../Tekstfiler/dataYrich_water_COI.txt",row.names=1)
-wat_COI<-read.table("../Tekstfiler/Species_data_COI_filt_wat.txt",row.names=1)
+sed_COI<-read.table("../Tekstfiler/species_data_COI_filt_sed.tsv",row.names=1)
+wat_COI<-read.table("../Tekstfiler/Species_data_COI_filt_wat.tsv",row.names=1)
 
 #As we need to group our orders by class, we will need the taxonomic data 
 COSQ_rare2<-readRDS("../RDS/COSQ_rare2_correct_score_tax.rds")
@@ -82,7 +81,8 @@ y<-m
 
 for (j in 1:k){
 
-ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_18S_",j,".png",sep=""),ggarrange(plotlist=plots[x:y],ncol=3,nrow=3))
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_18S_",j,".png",sep=""),annotate_figure(p,top="Sediment, 18S"))
 x<-y+1
 y<-x+(m-1)
   
@@ -130,7 +130,8 @@ y<-m
 
 for (j in 1:k){
 
-ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_18S_",j,".png",sep=""),ggarrange(plotlist=plots[x:y],ncol=3,nrow=3))
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_18S_",j,".png",sep=""),annotate_figure(p,top="Water, 18S"))
 x<-y+1
 y<-x+(m-1)
   
@@ -178,7 +179,8 @@ y<-m
 
 for (j in 1:k){
 
-ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_COI_",j,".png",sep=""),ggarrange(plotlist=plots[x:y],ncol=3,nrow=3))
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_COI_",j,".png",sep=""),annotate_figure(p,top="Sediment, COI"))
 x<-y+1
 y<-x+(m-1)
   
@@ -226,7 +228,8 @@ y<-m
 
 for (j in 1:k){
 
-ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_COI_",j,".png",sep=""),ggarrange(plotlist=plots[x:y],ncol=3,nrow=3))
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_COI_",j,".png",sep=""),annotate_figure(p,top="Water, COI"))
 x<-y+1
 y<-x+(m-1)
   

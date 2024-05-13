@@ -1,0 +1,73 @@
+---
+title: "Transformation of predictors"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-11-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load data}
+
+coord <- read.delim("../../Tekstfiler/merged_metadata_230427.txt",row.names=1)
+new.vars<-read.delim("../../Tekstfiler/Spatial_values.csv",sep=",")
+fsed<- read.table("../../Tekstfiler/sed_metadata.txt", sep="\t", header=T)
+fwat<-read.table("../../Tekstfiler/wat_metadata.txt", sep="\t", header=T)
+```
+
+```{r histograms sed}
+
+hist(coord$Salinity,col = "grey", xlab = "Salinity")
+
+hist(coord$cube_d14N_15N,col = "grey", xlab = "cube N isotopes")
+
+hist(coord$d12C_13C,col = "grey", xlab = "C isotopes")
+
+hist(coord$Organic_content,xlim=c(0,0.1),col = "grey", xlab = "Org content")
+hist(coord$log_Organic_content,xlim=c(-7,-2.5),col = "grey", xlab = " log Org content")
+
+hist(coord$Inorganic_content,xlim=c(0,0.1),col = "grey", xlab = "Org content")
+hist(coord$log_Inorganic_content,xlim=c(-7,-2.5),col = "grey", xlab = " log Org content")
+
+hist(coord$Grain_size,col = "grey", xlab = "Grain size")
+
+hist(coord$log_TP,col = "grey", xlab = "log TP")
+
+hist(fsed$Density, col = "grey", xlab = "Density")
+
+hist(coord$Dry_matter, col = "grey", xlab = "Dry matter")
+
+hist(coord$Water_content, col = "grey", xlab = "Water content")
+```
+
+```{r histograms wat}
+
+hist(coord$Si,col = "grey", xlab = "Silicate")
+hist(coord$log_Si,col = "grey", xlab = "log Silicate")
+
+hist(coord$PO4,col = "grey", xlab = "Phosphate")
+hist(coord$log_PO4,col = "grey", xlab = "log Phosphate")
+
+hist(coord$DN,col = "grey", xlab = "DN")
+hist(coord$log_DN,col = "grey", xlab = "log DN")
+
+hist(coord$Temperature,col = "grey", xlab = "Temp")
+
+hist(coord$log_Chlorophyll,col = "grey", xlab = "log Chlorophyll")
+
+hist(coord$d12C_13C,col = "grey", xlab = "d13C")
+
+#hist(fwat$CTD_depth,col = "grey", xlab = "Depth")
+
+hist(fwat$d18O,col = "grey", xlab = "d18O")
+```
+
+```{r histograms new vars}
+
+hist(new.vars$Oxygen.depletion, col="grey", xlab = "Oxygen depletion")
+hist(log(new.vars$Oxygen.depletion), col="grey", xlab = "log Oxygen depletion")
+```
+
+

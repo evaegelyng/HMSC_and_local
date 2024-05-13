@@ -21,8 +21,6 @@ COSQ_rare2_97
 
 ## Remove cluster 2 (which was only sampled in 1 season)
 COSQ_no_c2<-subset_samples(COSQ_rare2_97,!cluster==2)
-## Save this object for other analyses
-saveRDS(COSQ_no_c2,file="../RDS/COSQ_rare2_correct_pident97_no_C2.rds")
 
 # Extract sample data
 meta<-data.frame(sample_data(COSQ_no_c2), check.names=F)

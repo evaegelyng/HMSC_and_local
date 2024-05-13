@@ -18,6 +18,7 @@ library(ggpubr)
 library(phyloseq)
 library(Rarity)
 library(VennDiagram)
+library(tibble)
 ```
 
 ```{r load data}
@@ -71,12 +72,12 @@ otus$sample<-factor(substr(row.names(otus),
 #Check the number of biological replicates per sample
 bio_reps<-otus %>% group_by(sample) %>% summarise(n=n())
 #Select only samples with 3 replicates
-#three_reps<-filter(bio_reps,n=="3")
-#length(unique(sp_97_t$sample))
-#sp_97_3<-sp_97_t[sp_97_t$sample %in% three_reps$sample, ]
+three_reps<-filter(bio_reps,n=="3")
+length(unique(otus$sample))
+sp_18S_3<-otus[otus$sample %in% three_reps$sample, ]
 
 # Aggregate replicate samples, taking the mean of read counts
-rep_agg<-aggregate(. ~ sample, otus, function(x) mean(x))
+rep_agg<-aggregate(. ~ sample, sp_18S_3, function(x) mean(x))
 row.names(rep_agg)<-rep_agg$sample
 rep_agg<-within(rep_agg,rm(sample))
 # Save object for boxplots
@@ -106,13 +107,6 @@ sed[sed>0]<-1
 wat[wat>0]<-1
 ```
 
-```{r barplot}
-
-#ggplot(min100,aes(x=reorder(min100$final.id,min100$num_samples),y=min100$num_samples,fill=min100$final.id)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ theme(legend.position = "none") + labs(x="",y="Number of samples")
-
-```
-
-
 ```{r boxplot rich}
 
 # Subset to clusters where all three habitats were sampled
@@ -135,15 +129,23 @@ rep_6hab$Substrate<-metadata$substrate_type[match(row.names(rep_6hab),metadata$s
 rep_6hab$habitat<-metadata$habitat[match(row.names(rep_6hab),metadata$sample)]
 rep_6hab$season<-metadata$season[match(row.names(rep_6hab),metadata$sample)]
 
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+dat <- rep_6hab %>% tibble::rownames_to_column(var="outlier") %>% group_by(habitat,season,Substrate) %>% mutate(is_outlier=ifelse(is_outlier(rich), rich, as.numeric(NA)))
+dat$outlier[which(is.na(dat$is_outlier))] <- as.numeric(NA)
+
 # grouped boxplot
-box_rich<-ggplot(rep_6hab, aes(x=habitat, y=rich, fill=Substrate)) + 
+box_rich<-ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
     geom_boxplot() +
   scale_fill_manual(values = c('#d8b365','#5ab4ac'),
                      name = "", breaks = c("sediment","water"),
                      labels = c("sediment","water")) +
   xlab("") + ylab("MOTU richness")+
   facet_grid(. ~ season)+ 
-  theme(legend.position = "top", text = element_text(size = 18))
+  theme(legend.position = "top", text = element_text(size = 18))+
+  geom_text(aes(label=outlier),na.rm=TRUE,nudge_y=0.05)
 
 ggsave(file="../Plots/Boxplots/18S_rich.png",box_rich)
 ```
@@ -386,15 +388,15 @@ venn.diagram(
 ## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
 
   set.seed(123)
-  allmds <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+  allmds_w <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
 
-  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
-  site_scrs$New_Area <- metadata$New_Area[match(row.names(site_scrs), metadata$sample)]
+  site_scrs_w <- as.data.frame(scores(allmds_w, display = "sites"))
+  site_scrs_w$New_Area <- metadata$New_Area[match(row.names(site_scrs_w), metadata$sample)]
 
-  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs, FUN = mean)
-  segs <- merge(site_scrs, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs_w, FUN = mean)
+  segs <- merge(site_scrs_w, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
 
-  nmds_wat<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
+  nmds_wat<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
   geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
   scale_color_manual(values = c("#1B9E77","#E7298A","#A6761D","#666666"),
                      name = "", breaks = sort(unique(metadata$New_Area)),
@@ -407,7 +409,116 @@ venn.diagram(
 
   ggsave(file="../Plots/NMDS/NMDS_18S_both_4areas_All.png",ggarrange(nmds_sed,nmds_wat,ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
   
-  write.table(site_scrs,file=paste("../Tekstfiler/Jaccard_18S_wat_All.txt",sep=""))
+  write.table(site_scrs_w,file=paste("../Tekstfiler/Jaccard_18S_wat_All.txt",sep=""))
+```
+
+```{r nmds sed habitat}
+
+  cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
+  site_scrs$habitat <- metadata$habitat[match(row.names(site_scrs), metadata$sample)]
+  site_scrs$season <- metadata$season[match(row.names(site_scrs), metadata$sample)]
+  
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  plots_hab<-list()
+  
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(metadata$habitat),
+                     labels = unique(metadata$habitat)) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+  plots_hab[[1]]<-nmds_sed
+```
+
+```{r nmds wat habitat}
+
+  site_scrs_w$habitat <- metadata$habitat[match(row.names(site_scrs_w), metadata$sample)]
+  site_scrs_w$season <- metadata$season[match(row.names(site_scrs_w), metadata$sample)]
+  
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs_w, FUN = mean)
+  segs <- merge(site_scrs_w, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  plots_hab_w<-list()
+  
+  nmds_wat<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(metadata$habitat),
+                     labels = unique(metadata$habitat)) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+
+  plots_hab_w[[1]]<-nmds_wat
+  
+ ggsave(file="../Plots/NMDS/NMDS_18S_both_hab.png",ggarrange(plots_hab[[1]],plots_hab_w[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+```
+
+```{r nmds sed salinity}
+
+## Get salinities
+coord<-read.table("../Tekstfiler/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+metadata$new_name<-paste(metadata$season,metadata$cluster,metadata$habitat,sep="_")
+metadata$salinity <- coord$Salinity[match(metadata$new_name,row.names(coord))]
+
+site_scrs$salinity <- metadata$salinity[match(row.names(site_scrs), metadata$sample)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs, FUN = mean)
+segs <- merge(site_scrs, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+# set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
+
+plots<-list()
+
+  nmds_sal<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2)) + 
+  scale_colour_stepsn(colours = cols,
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1, aes(colour = salinity, shape = season)) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+  
+  plots[[1]]<-nmds_sal
+```
+
+```{r nmds wat salinity}
+
+## Get salinities
+site_scrs_w$salinity <- metadata$salinity[match(row.names(site_scrs_w), metadata$sample)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs_w, FUN = mean)
+segs <- merge(site_scrs_w, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+# set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
+
+plots_wat<-list()
+
+  nmds_sal_w<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2)) + 
+  scale_colour_stepsn(colours = cols,
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1, aes(colour = salinity, shape = season)) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
+  ggtitle("")
+  
+  plots_wat[[1]]<-nmds_sal_w
+  
+  ggsave(file="../Plots/NMDS/NMDS_18S_both_sal.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
 ```
 
 ```{r nmds both}
@@ -441,5 +552,6 @@ both[both>0]<-1
   theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
   ggtitle("")
 
-  ggsave(nmds_both,file=paste("../Plots/NMDS/NMDS_18S_both.png",sep=""))
+  saveRDS(nmds_both,"../Plots/NMDS/NMDS_18S_both.rds")
+  ggsave(nmds_both,file="../Plots/NMDS/NMDS_18S_both.png")
 ```

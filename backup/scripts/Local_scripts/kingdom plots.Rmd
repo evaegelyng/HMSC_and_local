@@ -1,0 +1,190 @@
+---
+title: "Kingdom plots correct data"
+author: "Karoline"
+date: "1/2/2023"
+output: html_document
+---
+
+```{r load libraries}
+
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library("gridExtra")
+library(RColorBrewer)
+```
+
+
+# COI 70-dataset
+
+```{r import and filter data}
+
+NEW_pident70_edited_FINAL <- read_excel("../../Karoline/Excelfiler/NEW_pident70_edited_FINAL.xlsx")
+
+pident70_marine <- NEW_pident70_edited_FINAL
+
+as.data.frame(pident70_marine)
+
+# Extract marine groups
+pident70_marine <- pident70_marine[which(pident70_marine$Marine=="Yes"),c(1,7,8,30)]
+
+# Check that the no. of OTUs is correct
+sum(NEW_pident70_edited_FINAL$Marine=="Yes")
+#6289  
+
+#Remove a single protozoan which could not be assigned to phylum
+pident70_marine<- pident70_marine[!grepl("NA", pident70_marine$phylum),]
+```
+
+## Aggregate data
+
+```{r aggregate kingdoms}
+
+kingdom_otu <- aggregate(.~kingdom,data=pident70_marine, FUN=function(x) length(unique(x)))
+
+# Check that the no. of OTUs is correct
+sum(kingdom_otu$id)
+
+#Extract relevant columns
+otus_pr_kingdom <- kingdom_otu[,c(1,2)]
+otus_pr_kingdom <-otus_pr_kingdom[order(-(otus_pr_kingdom$id)),]
+colnames(otus_pr_kingdom)[2] = "No_of_OTUs"
+```
+
+
+## Barplot
+
+```{r OTUS pr kingdom barplot}
+
+cols <- cols <- c("Plantae" = "#66C2A5", "Fungi" = "#FC8D62", "Metazoa" = "#8DA0CB", "Protozoa" = "#E78AC3", "Chromista" = "#A6D854")
+
+bp70 <- ggplot(otus_pr_kingdom, aes(reorder(x=factor(kingdom), No_of_OTUs), y=No_of_OTUs, fill=factor(kingdom))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='No. of MOTUs', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp70
+```
+
+
+
+# COI 97-data
+
+```{r import and filter data}
+
+NEW_pident97_data_FINAL <- read_excel("../../Karoline/Excelfiler/NEW_pident97_data_FINAL.xlsx")
+
+pident97_marine <- NEW_pident97_data_FINAL 
+
+as.data.frame(pident97_marine)
+
+pident97_marine <- pident97_marine[which(pident97_marine$Marine=="Yes"),c(1,7,8,32)]
+
+# Check that the no. of OTUs is correct
+sum(NEW_pident97_data_FINAL$Marine=="Yes")
+#532 
+```
+
+## Aggregate data
+
+```{r aggregate kingdoms}
+
+kingdom_otu<- aggregate( .~kingdom,data=pident97_marine, FUN=function(x) length(unique((x)))) 
+
+# Check that the no. of OTUs is correct
+sum(kingdom_otu$id)
+#532
+
+#Extract relevant columns
+otus_pr_kingdom <- kingdom_otu[,c(1,2)]
+otus_pr_kingdom <-otus_pr_kingdom[order(-(otus_pr_kingdom$id)),]
+colnames(otus_pr_kingdom)[2] = "No_of_OTUs"
+```
+
+
+## Barplot
+
+```{r OTUS pr kingdom barplot}
+
+bp97 <- ggplot(otus_pr_kingdom, aes(reorder(x=factor(kingdom), No_of_OTUs), y=No_of_OTUs, fill=factor(kingdom))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp97
+```
+
+# 18S data
+
+```{r import data}
+
+tax18S<-read.table("../Tekstfiler/cleaned_ncbi_12_12_22.txt", sep='\t', header=T, comment="")
+
+# Add kingdoms
+tax18S<-tax18S %>%
+  mutate(Kingdom = case_when(Division %in% c("Viridiplantae", "Rhodophyta","Rhodelphea") ~ "Plantae",
+                             Division %in% c("Alveolata", "Rhizaria", "Stramenopiles", "Cryptista", "Haptista", "Telonemida") ~ 'Chromista',
+                             Division %in% c("Choanoflagellata","Amoebozoa_IS","Apusomonadida","Ichthyosporea","Ancyromonadida","Discoba","Filasterea","Rotosphaerida","Breviatea","Mantamonadida","Metamonada","Tunicaraptor") ~ 'Protozoa',
+                             Division ==  "Metazoa" ~ 'Metazoa',
+                             Division ==  "Fungi" ~ 'Fungi',TRUE ~ NA_character_),
+         Kingdom = factor(Kingdom, levels = c('Plantae',"Chromista","Protozoa","Metazoa","Fungi")))
+
+# Extract relevant columns
+tax18S<-tax18S[,c(3,8)]
+
+# Add column with sequence ID
+tax18S$id<-row.names(tax18S)
+```
+
+## Aggregate data
+
+```{r aggregate kingdoms}
+
+kingdom_otu<- aggregate( .~Kingdom,data=tax18S, FUN=function(x) length(unique((x)))) 
+
+# Check that the no. of OTUs is correct
+sum(kingdom_otu$id)
+#4703
+
+#Extract relevant columns
+otus_pr_kingdom <- kingdom_otu[,c(1,3)]
+otus_pr_kingdom <-otus_pr_kingdom[order(-(otus_pr_kingdom$id)),]
+colnames(otus_pr_kingdom)[2] = "No_of_OTUs"
+```
+
+
+## Barplot
+
+```{r OTUS pr kingdom barplot}
+
+bp18S <- ggplot(otus_pr_kingdom, aes(reorder(x=factor(Kingdom), No_of_OTUs), y=No_of_OTUs, fill=factor(Kingdom))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +  
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp18S
+
+#Combine plots for all three datasets
+bp_kingdom <- grid.arrange(bp70,bp97,bp18S,nrow=1,ncol=3)
+```

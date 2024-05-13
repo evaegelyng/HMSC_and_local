@@ -684,6 +684,17 @@ motu_agg<-within(motu_agg,rm(final.id))
 
 rich_t_97<-as.data.frame(t(motu_agg),check.names=F)
 
+#rich_t_97$sample<-factor(substr(row.names(rich_t_97),
+#                          1,
+#                          nchar(row.names(rich_t_97))-1))
+
+#Check the number of biological replicates per sample
+#bio_reps<-rich_t_97 %>% group_by(sample) %>% summarise(n=n())
+#Select only samples with 3 replicates
+#three_reps<-filter(bio_reps,n=="3")
+#length(unique(rich_t_97$sample))
+#rich_97_3<-rich_t_97[rich_t_97$sample %in% three_reps$sample, ]
+
 # Add metadata
 rich_t_97$cluster<-meta$cluster[match(row.names(rich_t_97),meta$root)]
 rich_t_97$substrate_type<-meta$substrate_type[match(row.names(rich_t_97),meta$root)]
