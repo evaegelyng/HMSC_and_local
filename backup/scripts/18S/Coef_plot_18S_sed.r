@@ -65,6 +65,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
       } 
       }
      beta$Betapar=round(as.numeric(beta$Betapar),2)
+     #beta$Betapar=round(as.numeric(beta$Betapar),6) # For quadratic salinity effect, bac richness and N
 
   
   plo<-beta %>% 
@@ -73,8 +74,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
     scale_color_manual(values=col_vector[11:23])+
     theme_bw()+
     scale_y_continuous(labels = scales::label_number(accuracy = 0.01))  +
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.001))  + #For quadratic salinity effect
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.00000001))  + #For bacterial richness and N
+    #scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  + #For quadratic salinity effect, bac richness and N
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -117,16 +117,6 @@ tax<- tax[,c("Class","Phylum","Division")]
 #This function estimates beta coefficients and formats data to plot with ggplot
 beta<-coef_beta(model)
 
-####OBS de forskellige parametre har forskellige units!! hvor højt du vil afrunde kan ændres i round(), 
-#og hvor mange descimaler i plottet på y aksen kan ændres under scale y continous.  
-#plotting function that filters after specified parameter and facets according to reference taxa. 
-
-plo<-list()
-#Estimating all coefficients:
-for(i in unique(beta$variable)){
- plo[[i]]<-coef_plot(beta, parameter=c(i),title=paste("Sediment,",i,sep=" "),grouping=tax)
-  
-}
 
 sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Sediment",grouping=tax)
 d14N_15N<-coef_plot(beta, parameter="d14N_15N",title="Sediment",grouping=tax)

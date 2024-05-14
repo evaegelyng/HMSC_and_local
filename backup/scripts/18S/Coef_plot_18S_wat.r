@@ -66,7 +66,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
       } 
       }
      beta$Betapar=round(as.numeric(beta$Betapar),2)
-
+     #beta$Betapar=round(as.numeric(beta$Betapar),6) # For quadratic salinity effect and bac richness
   
   plo<-beta %>% 
     filter(variable != "(Intercept)")%>%
@@ -74,8 +74,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
     scale_color_manual(values=col_vector[11:23])+
     theme_bw()+
     scale_y_continuous(labels = scales::label_number(accuracy = 0.01))  +
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.001))  + #For quadratic salinity effect
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.000000000000001))  + #For bacterial richness
+    #scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  + #For quadratic salinity effect and bac richness
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -118,10 +117,6 @@ tax<- tax[,c("Class","Phylum","Division")]
 
 #This function estimates beta coefficients and formats data to plot with ggplot
 beta<-coef_beta(model)
-
-####OBS de forskellige parametre har forskellige units!! hvor højt du vil afrunde kan ændres i round(), 
-#og hvor mange descimaler i plottet på y aksen kan ændres under scale y continous.  
-#plotting function that filters after specified parameter and facets according to reference taxa. 
 
 #Check variable names:
 unique(beta$variable)
