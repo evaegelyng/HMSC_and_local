@@ -2,7 +2,7 @@ library(tidyverse)
 library(patchwork)
 library(fields)
 library(Hmsc)
-
+library(phyloseq)
 
 model<- readRDS("results/Water/COI/COI_wat_240426.rds")
 
@@ -64,17 +64,14 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
         beta[[clade]]<- factor(beta[[clade]], levels=levels)
       } 
       }
-     beta$Betapar=round(as.numeric(beta$Betapar),2)
-
+     beta$Betapar=round(as.numeric(beta$Betapar),6)
   
   plo<-beta %>% 
     filter(variable != "(Intercept)")%>%
     ggplot(aes(x=order, y=Betapar))+
     scale_color_manual(values=col_vector[11:23])+
     theme_bw()+
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.01))  +
-    scale_y_continuous(labels = scales::label_number(accuracy = 0.001))  + #For quadratic salinity effect
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.000000000000001))  + #For bacterial richness
+    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  +
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -119,10 +116,6 @@ tax<- tax[,c("order","class","phylum","kingdom")]
 #This function estimates beta coefficients and formats data to plot with ggplot
 beta<-coef_beta(model)
 
-####OBS de forskellige parametre har forskellige units!! hvor højt du vil afrunde kan ændres i round(), 
-#og hvor mange descimaler i plottet på y aksen kan ændres under scale y continous.  
-#plotting function that filters after specified parameter and facets according to reference taxa. 
-
 #Check variable names:
 unique(beta$variable)
 
@@ -135,6 +128,8 @@ Oxygen.depletion<-coef_plot(beta, parameter="Oxygen.depletion",title="Water",gro
 Chlorophyll<-coef_plot(beta, parameter="Chlorophyll",title="Water",grouping=tax)
 No_fishing<-coef_plot(beta, parameter="FishingTrawlingNo fishing/No ban",title="Sediment",grouping=tax)
 Yes_fishing<-coef_plot(beta, parameter="FishingTrawlingYes fishing/No ban",title="Sediment",grouping=tax)
+sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Water",grouping=tax)
+Bac_rich<-coef_plot(beta, parameter="bac_rich",title="Water",grouping=tax)
 
 ggsave("results/Water/COI/COI_coeff_wat_sal1.png", sal1, width=10, height=9)
 ggsave("results/Water/COI/COI_coeff_wat_Si.png", Si, width=10, height=9)
@@ -145,9 +140,6 @@ ggsave("results/Water/COI/COI_coeff_wat_DN.png", DN, width=10, height=9)
 ggsave("results/Water/COI/COI_coeff_wat_temp.png", Temperature, width=10, height=9)
 ggsave("results/Water/COI/COI_coeff_wat_oxy.png", Oxygen.depletion, width=10, height=9)
 ggsave("results/Water/COI/COI_coeff_wat_chl.png", Chlorophyll, width=10, height=9)
-
-sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Water",grouping=tax)
-Bac_rich<-coef_plot(beta, parameter="bac_rich",title="Water",grouping=tax)
 ggsave("results/Water/COI/COI_coeff_wat_sal2.png", sal2, width=10, height=9)
 ggsave("results/Water/COI/COI_coeff_wat_bac.png", Bac_rich, width=10, height=9)
 

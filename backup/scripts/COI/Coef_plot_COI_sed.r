@@ -2,7 +2,7 @@ library(tidyverse)
 library(patchwork)
 library(fields)
 library(Hmsc)
-
+library(phyloseq)
 
 model<- readRDS("results/sediment/COI/COI_240426.rds")
 
@@ -64,16 +64,14 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
         beta[[clade]]<- factor(beta[[clade]], levels=levels)
       } 
       }
-     beta$Betapar=round(as.numeric(beta$Betapar),2)
-     #beta$Betapar=round(as.numeric(beta$Betapar),6) # For quadratic salinity effect, bac richness and N
+     beta$Betapar=round(as.numeric(beta$Betapar),6) 
   
   plo<-beta %>% 
     filter(variable != "(Intercept)")%>%
     ggplot(aes(x=order, y=Betapar))+
     scale_color_manual(values=col_vector[11:23])+
     theme_bw()+
-    scale_y_continuous(labels = scales::label_number(accuracy = 0.01))  +
-    #scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  + #For quadratic salinity effect, bac richness, and N
+    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  +
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -129,6 +127,9 @@ TP<-coef_plot(beta, parameter="TP",title="Sediment",grouping=tax)
 Oxygen.depletion<-coef_plot(beta, parameter="Oxygen.depletion",title="Sediment",grouping=tax)
 No_fishing<-coef_plot(beta, parameter="FishingTrawlingNo fishing/No ban",title="Sediment",grouping=tax)
 Yes_fishing<-coef_plot(beta, parameter="FishingTrawlingYes fishing/No ban",title="Sediment",grouping=tax)
+sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Sediment",grouping=tax)
+N<-coef_plot(beta, parameter="N",title="Sediment",grouping=tax)
+Bac_rich<-coef_plot(beta, parameter="bac_rich",title="Sediment",grouping=tax)
 
 ggsave("results/sediment/COI/COI_coeff_sed_sal1.png", sal1, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_d14N_15N.png", d14N_15N, width=10, height=9)
@@ -138,13 +139,9 @@ ggsave("results/sediment/COI/COI_coeff_sed_TP.png", TP, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_oxy.png", Oxygen.depletion, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_nofish.png", No_fishing, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_yesfish.png", Yes_fishing, width=10, height=9)
-
-#sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Sediment",grouping=tax)
-#N<-coef_plot(beta, parameter="N",title="Sediment",grouping=tax)
-#Bac_rich<-coef_plot(beta, parameter="bac_rich",title="Sediment",grouping=tax)
-#ggsave("results/sediment/COI/COI_coeff_sed_sal2.png", sal2, width=10, height=9)
-#ggsave("results/sediment/COI/COI_coeff_sed_N.png", N, width=10, height=9)
-#ggsave("results/sediment/COI/COI_coeff_sed_bac.png", Bac_rich, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_sal2.png", sal2, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_N.png", N, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_bac.png", Bac_rich, width=10, height=9)
 
 '
 The coefficient plot for habitat type

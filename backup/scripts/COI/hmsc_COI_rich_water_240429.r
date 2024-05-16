@@ -336,7 +336,7 @@ samples = samples, transient = transient,
 nChains = nChains, nParallel = nParallel, verbose = verbose)
 
 #Saving model
-saveRDS(models, file = "results/Water/COI/COI_240426.rds")
+saveRDS(models, file = "results/Water/COI/COI_wat_240426.rds")
 
 #Diagnostic
 modelsII<-models
