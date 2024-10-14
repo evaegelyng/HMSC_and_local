@@ -4,8 +4,7 @@ library(fields)
 library(Hmsc)
 library(phyloseq)
 
-model<- readRDS("results/Water/COI/COI_wat_241007.rds")
-
+model<-  readRDS("results/sediment/16S/16S_sed_241007.rds")
 
 coef_beta<- function(model){
   
@@ -27,7 +26,7 @@ coef_beta<- function(model){
   coef_plot<- toPlot %>% pivot_longer(
     cols=1:len,
     values_to="Betapar",
-    names_to="order",
+    names_to="Class",
     names_repair = "minimal"
   )
   
@@ -49,14 +48,14 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
   if(!is.null(grouping)){
     for(i in 2:length(colnames(grouping))){
       clade=colnames(grouping)[i]
-      beta[[clade]]<- tax[match(beta$order,grouping[,1]),clade]
+      beta[[clade]]<- tax[match(beta$Class,grouping[,1]),clade]
     } 
 
       clade=colnames(grouping)[length(colnames(grouping))]
       
-      beta<- beta[order(beta$kingdom,beta$phylum,beta$class),]
+      beta<- beta[order(beta$Kingdom,beta$Phylum,beta$Class),]
       
-      beta$order<- factor(beta$order, levels=unique(beta$order))
+      beta$Class<- factor(beta$Class, levels=unique(beta$Class))
       
       for(i in 2:length(colnames(grouping))){
         clade=colnames(grouping)[i]
@@ -64,14 +63,15 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
         beta[[clade]]<- factor(beta[[clade]], levels=levels)
       } 
       }
-     beta$Betapar=round(as.numeric(beta$Betapar),6)
+     beta$Betapar=round(as.numeric(beta$Betapar),6) 
+
   
   plo<-beta %>% 
     filter(variable != "(Intercept)")%>%
-    ggplot(aes(x=order, y=Betapar))+
+    ggplot(aes(x=Class, y=Betapar))+
     scale_color_manual(values=col_vector[11:23])+
     theme_bw()+
-    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  +
+    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  + 
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -92,7 +92,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 
   if(!is.null(grouping)){
   plo<- plo+ 
-      facet_grid(~ class+phylum+kingdom, 
+      facet_grid(~ Phylum+Kingdom, 
                  scales = "free_x", # Let the x axis vary across facets.
                  space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
                  switch = "x")}    # }
@@ -102,40 +102,37 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 }
 
 
-
 '
 Specify taxonomic reference database:
 '
-
-COSQ_rare2<-readRDS("data/COI_no_c2_3reps.rds")
+COSQ_rare2<-readRDS("data/16S_no_c2_3reps.rds")
+OTU_16S = otu_table(COSQ_rare2, taxa_are_rows = TRUE)
 TAX_S = tax_table(COSQ_rare2)
 tax <- data.frame(TAX_S,rownames=F)
-tax<- tax[,c("order","class","phylum","kingdom")]
+tax<- tax[,c("Class","Phylum","Kingdom")]
 
 #This function estimates beta coefficients and formats data to plot with ggplot
 beta<-coef_beta(model)
 
-#Check variable names:
-unique(beta$variable)
 
-sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Water",grouping=tax)
-Si<-coef_plot(beta, parameter="Si",title="Water",grouping=tax)
-PO4<-coef_plot(beta, parameter="PO4",title="Water",grouping=tax)
-DN<-coef_plot(beta, parameter="DN",title="Water",grouping=tax)
-Temperature<-coef_plot(beta, parameter="Temperature",title="Water",grouping=tax)
-Chlorophyll<-coef_plot(beta, parameter="Chlorophyll",title="Water",grouping=tax)
-sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Water",grouping=tax)
+sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Sediment",grouping=tax)
+d14N_15N<-coef_plot(beta, parameter="d14N_15N",title="Sediment",grouping=tax)
+Organic_content<-coef_plot(beta, parameter="Organic_content",title="Sediment",grouping=tax)
+Grain_size<-coef_plot(beta, parameter="Grain_size",title="Sediment",grouping=tax)
+TP<-coef_plot(beta, parameter="TP",title="Sediment",grouping=tax)
+sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Sediment",grouping=tax)
+N<-coef_plot(beta, parameter="N",title="Sediment",grouping=tax)
 
-ggsave("results/Water/COI/COI_coeff_wat_sal1.png", sal1, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_Si.png", Si, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_PO4.png", PO4, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_DN.png", DN, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_temp.png", Temperature, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_chl.png", Chlorophyll, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_sal2.png", sal2, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_sal1.png", sal1, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_d14N_15N.png", d14N_15N, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_Organic.png", Organic_content, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_grain.png", Grain_size, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_TP.png", TP, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_sal2.png", sal2, width=10, height=9)
+ggsave("results/sediment/16S/16S_coeff_sed_N.png", N, width=10, height=9)
 
 '
-The coefficient plot for habitat type
+The coefficient plot for habitat types
 
 '
 postBeta = getPostEstimate(model, parName="Beta")
@@ -158,15 +155,14 @@ length(toPlot)
 coef_plot<- toPlot %>% pivot_longer(
   cols=1:(length(toPlot)-1),
   values_to="Betapar",
-  names_to="order",
+  names_to="Class",
   names_repair = "minimal"
 )
 
-coef_plot$phylum<-tax$phylum[match(coef_plot$order,tax$order)] 
-coef_plot$kingdom<-tax$kingdom[match(coef_plot$order,tax$order)] 
-coef_plot$class<-tax$class[match(coef_plot$order,tax$order)] 
-coef_plot<- coef_plot[order(coef_plot$kingdom,coef_plot$phylum,coef_plot$class),]
-coef_plot$order<- factor(coef_plot$order, levels=unique(coef_plot$order))
+coef_plot$Phylum<-tax$Phylum[match(coef_plot$Class,tax$Class)] 
+coef_plot$Kingdom<-tax$Kingdom[match(coef_plot$Class,tax$Class)] 
+coef_plot<- coef_plot[order(coef_plot$Kingdom,coef_plot$Phylum),]
+coef_plot$Class<- factor(coef_plot$Class, levels=unique(coef_plot$Class))
 coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
 
 require(RColorBrewer)
@@ -179,12 +175,12 @@ head(coef_plot)
 
 # Plot for habitat type
 hab<- coef_plot %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
-hab<- hab[order(hab$kingdom,hab$phylum,hab$class,hab$order),]
+hab<- hab[order(hab$Kingdom,hab$Phylum,hab$Class),]
 
 p<-hab%>% 
   filter(variable != "(Intercept)")%>%
-  ggplot(aes(x=order, y=Betapar, color=variable)) +
-  facet_grid(~class+phylum+kingdom, 
+  ggplot(aes(x=Class, y=Betapar, color=variable)) +
+  facet_grid(~Phylum+Kingdom, 
              scales = "free_x", # Let the x axis vary across facets.
              space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
              switch = "x")+
@@ -198,4 +194,4 @@ p<-hab%>%
     y ="Estimated effect",
     title = "")
 
-ggsave(p,file="results/Water/COI/coef_wat_hab.png",height=9,width=10)
+ggsave(p,file="results/sediment/16S/coef_sed_hab.png",height=9,width=10)

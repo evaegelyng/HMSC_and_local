@@ -4,7 +4,7 @@ library(fields)
 library(Hmsc)
 library(phyloseq)
 
-model<- readRDS("results/sediment/COI/COI_240426.rds")
+model<- readRDS("results/sediment/COI/COI_sed_241007.rds")
 
 
 coef_beta<- function(model){
@@ -92,7 +92,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 
   if(!is.null(grouping)){
   plo<- plo+ 
-      facet_grid(~ order+class+phylum+kingdom, 
+      facet_grid(~ class+phylum+kingdom, 
                  scales = "free_x", # Let the x axis vary across facets.
                  space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
                  switch = "x")}    # }
@@ -108,7 +108,6 @@ Specify taxonomic reference database:
 '
 
 COSQ_rare2<-readRDS("data/COI_no_c2_3reps.rds")
-OTU_COI = otu_table(COSQ_rare2, taxa_are_rows = TRUE)
 TAX_S = tax_table(COSQ_rare2)
 tax <- data.frame(TAX_S,rownames=F)
 tax<- tax[,c("order","class","phylum","kingdom")]
@@ -124,24 +123,16 @@ d14N_15N<-coef_plot(beta, parameter="d14N_15N",title="Sediment",grouping=tax)
 Organic_content<-coef_plot(beta, parameter="Organic_content",title="Sediment",grouping=tax)
 Grain_size<-coef_plot(beta, parameter="Grain_size",title="Sediment",grouping=tax)
 TP<-coef_plot(beta, parameter="TP",title="Sediment",grouping=tax)
-Oxygen.depletion<-coef_plot(beta, parameter="Oxygen.depletion",title="Sediment",grouping=tax)
-No_fishing<-coef_plot(beta, parameter="FishingTrawlingNo fishing/No ban",title="Sediment",grouping=tax)
-Yes_fishing<-coef_plot(beta, parameter="FishingTrawlingYes fishing/No ban",title="Sediment",grouping=tax)
 sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Sediment",grouping=tax)
 N<-coef_plot(beta, parameter="N",title="Sediment",grouping=tax)
-Bac_rich<-coef_plot(beta, parameter="bac_rich",title="Sediment",grouping=tax)
 
 ggsave("results/sediment/COI/COI_coeff_sed_sal1.png", sal1, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_d14N_15N.png", d14N_15N, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_Organic.png", Organic_content, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_grain.png", Grain_size, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_TP.png", TP, width=10, height=9)
-ggsave("results/sediment/COI/COI_coeff_sed_oxy.png", Oxygen.depletion, width=10, height=9)
-ggsave("results/sediment/COI/COI_coeff_sed_nofish.png", No_fishing, width=10, height=9)
-ggsave("results/sediment/COI/COI_coeff_sed_yesfish.png", Yes_fishing, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_sal2.png", sal2, width=10, height=9)
 ggsave("results/sediment/COI/COI_coeff_sed_N.png", N, width=10, height=9)
-ggsave("results/sediment/COI/COI_coeff_sed_bac.png", Bac_rich, width=10, height=9)
 
 '
 The coefficient plot for habitat type
@@ -193,7 +184,7 @@ hab<- hab[order(hab$kingdom,hab$phylum,hab$class,hab$order),]
 p<-hab%>% 
   filter(variable != "(Intercept)")%>%
   ggplot(aes(x=order, y=Betapar, color=variable)) +
-  facet_grid(~order+class+phylum+kingdom, 
+  facet_grid(~class+phylum+kingdom, 
              scales = "free_x", # Let the x axis vary across facets.
              space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
              switch = "x")+
@@ -207,4 +198,4 @@ p<-hab%>%
     y ="Estimated effect",
     title = "")
 
-ggsave(p,file="results/sediment/COI/coef_sed_hab.png",height=14,width=12)
+ggsave(p,file="results/sediment/COI/coef_sed_hab.png",height=9,width=10)

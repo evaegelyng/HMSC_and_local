@@ -18,10 +18,10 @@ COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
 #Load env data
 pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.names=1)
 fwat<-read.table("data/wat_metadata.txt", sep="\t", header=T)
-spat<-read.table("data/Spatial_values_240430.csv", sep=",", header=T, row.names=1)
+#spat<-read.table("data/Spatial_values_240430.csv", sep=",", header=T, row.names=1)
 pc_bs$Chlorophyll<-fwat$Chlorophyll[match(row.names(pc_bs),fwat$shc)]
-pc_bs$Oxygen.depletion<-spat$Oxygen.depletion[match(row.names(pc_bs),row.names(spat))]
-pc_bs$FishingTrawling<-spat$FishingTrawling[match(row.names(pc_bs),row.names(spat))]
+#pc_bs$Oxygen.depletion<-spat$Oxygen.depletion[match(row.names(pc_bs),row.names(spat))]
+#pc_bs$FishingTrawling<-spat$FishingTrawling[match(row.names(pc_bs),row.names(spat))]
 
 # Load bacterial richness data
 bac<-read.table("results/bact_rich.tsv", sep="\t", header=T, row.names=1)
@@ -137,7 +137,7 @@ pc_bs["spring_13_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
 
 head(pc_bs)
 #What variables should be kept?
-pc_bs2<-pc_bs[,c("Oxygen.depletion","Salinity","Si","PO4","DN","Temperature","habitat","season","sshc","Chlorophyll","bac_rich","FishingTrawling")]
+pc_bs2<-pc_bs[,c("Salinity","Si","PO4","DN","Temperature","habitat","season","sshc","Chlorophyll")]
 
 # Identify samples with complete metadata
 print("Total number of samples")
@@ -190,14 +190,14 @@ dare$Si<-pc_bs2$Si[match(dare$sch, pc_bs2$sch)]
 dare$PO4<-pc_bs2$PO4[match(dare$sch, pc_bs2$sch)]
 dare$DN<-pc_bs2$DN[match(dare$sch, pc_bs2$sch)]
 dare$Temperature<-pc_bs2$Temperature[match(dare$sch, pc_bs2$sch)]
-dare$Oxygen.depletion<- pc_bs2$Oxygen.depletion[match(dare$sch, pc_bs2$sch)]
+#dare$Oxygen.depletion<- pc_bs2$Oxygen.depletion[match(dare$sch, pc_bs2$sch)]
 dare$Chlorophyll<- pc_bs2$Chlorophyll[match(dare$sch, pc_bs2$sch)]
-dare$bac_rich<-pc_bs2$bac_rich[match(dare$sch, pc_bs2$sch)]
-dare$FishingTrawling<-as.factor(pc_bs2$FishingTrawling[match(dare$sch, pc_bs2$sch)])
+#dare$bac_rich<-pc_bs2$bac_rich[match(dare$sch, pc_bs2$sch)]
+#dare$FishingTrawling<-as.factor(pc_bs2$FishingTrawling[match(dare$sch, pc_bs2$sch)])
 
 #Variables to include in the final dataframe
 dare<-dare[,c("sch","cluster","season","sc","sshc","habitat",
-"Salinity","Si","PO4","DN","Temperature","Chlorophyll","Oxygen.depletion","bac_rich","FishingTrawling")]
+"Salinity","Si","PO4","DN","Temperature","Chlorophyll")]
 
 #Filtering by rich, abund and sites occurring
 #I.e. picking out the most rich, abundant and frequent classes of species. 
@@ -233,7 +233,7 @@ dataYabund <- dataYabund[, tax_to_keep2]
 #Removing undefined clades
 dataYrich<- dataYrich[, !grepl("NA", names(dataYrich))]
 
-write.table(dare, file = "tmp/Dare_COI_wat.tsv", sep = "\t", row.names = FALSE)
+write.table(dare, file = "tmp/Dare_COI_wat_241007.tsv", sep = "\t", row.names = FALSE)
 write.table(dataYrich, file="tmp/Species_data_COI_wat.tsv", sep= "\t")
 
 #Check prevalence and abundance
@@ -313,7 +313,7 @@ rl2 = setPriors(rl2,nfMax=5)
 rnd_ef<-list("Time_d"=rl1,"space"=rl2)
 
 #Create formula
-XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + Si + PO4 + DN + Temperature + habitat + Chlorophyll + Oxygen.depletion + bac_rich + FishingTrawling
+XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + Si + PO4 + DN + Temperature + habitat + Chlorophyll
 
 
 #Set models; abund or rich, evaluate different distributions
@@ -336,7 +336,7 @@ samples = samples, transient = transient,
 nChains = nChains, nParallel = nParallel, verbose = verbose)
 
 #Saving model
-saveRDS(models, file = "results/Water/COI/COI_wat_240426.rds")
+saveRDS(models, file = "results/Water/COI/COI_wat_241007.rds")
 
 #Diagnostic
 modelsII<-models
@@ -380,14 +380,14 @@ print("Std dev of PSRF")
 sd(gd$psrf)
 
 #Histogram of effective sample size
-pdf("results/Water/COI/diag_240426.pdf")
+pdf("results/Water/COI/diag_241007.pdf")
 par(mfrow=c(1,2))
 hist(effectiveSize(mpost$Beta), main="ess(beta)")
 hist(gelman.diag(mpost$Beta, multivariate=F)$psrf, main="psrf(beta)")
 dev.off()
 
 #Posterior beta estimation over different iterations gives an idea of parameter convergence for each parameter.
-pdf("results/Water/COI/diag_beta_240426.pdf")
+pdf("results/Water/COI/diag_beta_241007.pdf")
 plot(mpost$Beta)
 dev.off()
 

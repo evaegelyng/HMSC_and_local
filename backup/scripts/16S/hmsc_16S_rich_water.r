@@ -9,50 +9,57 @@ library("Hmsc")
 library("dplyr")
 
 #Load rarefied dataset
-COSQ_rare<-readRDS("data/18S_no_c2_3reps_pident90_lulu97.rds")
+COSQ_rare<-readRDS("data/16S_no_c2_3reps.rds")
 
-# Subset to sediment substrate
-COSQ_s<-subset_samples(COSQ_rare, substrate_type=="sediment")
+# Subset to water substrate
+COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
 
 # Load env data
 pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.names=1)
-fsed<-read.table("data/sed_metadata.txt", sep="\t", header=T)
-pc_bs$TP<-fsed$TP[match(row.names(pc_bs),fsed$snch)]
-pc_bs$d14N_15N<-fsed$d14N_15N[match(row.names(pc_bs),fsed$snch)]
+fwat<-read.table("data/wat_metadata.txt", sep="\t", header=T)
+#spat<-read.table("data/Spatial_values_240430.csv", sep=",", header=T, row.names=1)
+pc_bs$Chlorophyll<-fwat$Chlorophyll[match(row.names(pc_bs),fwat$shc)]
+#pc_bs$Oxygen.depletion<-spat$Oxygen.depletion[match(row.names(pc_bs),row.names(spat))]
+#pc_bs$FishingTrawling<-spat$FishingTrawling[match(row.names(pc_bs),row.names(spat))]
+
+# Load bacterial richness data
+#bac<-read.table("results/bact_rich.tsv", sep="\t", header=T, row.names=1)
+#pc_bs$sshc<-paste("water",pc_bs$season,pc_bs$habitat,pc_bs$cluster,sep="_")
+#pc_bs$bac_rich<-bac$rich[match(pc_bs$sshc,rownames(bac))]
 
 # Load distance matrix
 distsea<-read.table("data/dist_by_sea.txt", sep="\t", header=T)
 
 # Merge at class level 
-DT1.2<-tax_glom(COSQ_s, taxrank="class")
+DT1.2<-tax_glom(COSQ_w, taxrank="Class")
 
 #creating abundance dataframe from phyloseq object
 dataYabund<-data.frame(otu_table(DT1.2))
 taxa<-data.frame(tax_table(DT1.2))
-colnames(dataYabund)<-taxa$class
+colnames(dataYabund)<-taxa$Class
 
 # Preparing richness calculations
-otuo<-data.frame(otu_table(COSQ_s))
-taxo<-data.frame(tax_table(COSQ_s), stringsAsFactors=FALSE)
-colnames(otuo)<-taxo$class
-do<-data.frame(sample_data(COSQ_s))
+otuo<-data.frame(otu_table(COSQ_w))
+taxo<-data.frame(tax_table(COSQ_w), stringsAsFactors=FALSE)
+colnames(otuo)<-taxo$Class
+do<-data.frame(sample_data(COSQ_w))
 
 #Categorisation into taxonomic level. Richness is the sum of unique OTU's within each order in a specific sample.
-clades<-levels(factor(taxo$class))
+clades<-levels(factor(taxo$Class))
 
 # Prepare for calculating richness of each order in each sample
 otuo2<-t(data.frame(otuo, check.names=F))
 tabr<-cbind(taxo, otuo2)
 # Check tax label columns and remove unnecessary ones
 tabr[1:2,1:7]
-tabr<-within(tabr,rm("kingdom","phylum"))
+tabr<-within(tabr,rm("Kingdom","Phylum","Order","Family","Genus"))
 ch<-do$sshc
 z<-expand.grid("sshc"=ch, stringsAsFactors=FALSE)
 
 #Sum columns of all samples within the specified taxonomic level acquiring OTU richness.  
 for(i in 1:length(clades))
 {
-gtr<-subset(tabr, class==clades[i])
+gtr<-subset(tabr, Class==clades[i])
 rich<-colSums(gtr[,-1] != 0)
 z<-cbind(z, rich)
 t<-1+i
@@ -72,14 +79,14 @@ otu<-t(data.frame(otu,check.names=F))
 tab<-cbind(tax, otu)
 
 #Checking for NA values in the Class column
-tab[tab$class == "NA",]
+tab[tab$Class == "NA",]
 #removing any non classified taxa
-tab<- tab[tab$class != "NA",]
-rownames(tab)<-tab$class
+tab<- tab[tab$Class != "NA",]
+rownames(tab)<-tab$Class
                                  
 # Check tax label columns and remove unnecessary ones
 tab[1:2,1:9]
-tab<-within(tab,rm("kingdom","phylum"))
+tab<-within(tab,rm("Kingdom","Phylum","Order","Family","Genus"))
 ttab<-t(data.frame(tab, check.names=F))
 class(ttab) <- "numeric"
 
@@ -113,11 +120,21 @@ pc_bs$season <- factor(pc_bs$season, levels = c("spring","autumn"))
 pc_bs$habitat <- factor(pc_bs$habitat, levels = c("sand","rocks","eelgrass"))
 pc_bs$sc<-paste(pc_bs$season, pc_bs$cluster, sep="_")
 pc_bs$sch<-rownames(pc_bs)
-pc_bs$sshc<-paste("sediment",pc_bs$season,pc_bs$habitat, pc_bs$cluster, sep="_")
+pc_bs$sshc<-paste("water",pc_bs$season,pc_bs$habitat, pc_bs$cluster, sep="_")
+
+#Add temperature missing data
+#
+#Missing data - temperature data imputed from average of adjacent sites
+tempdata<-subset(pc_bs, season=="spring"&(cluster==11|cluster==14))
+
+pc_bs["spring_12_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
+pc_bs["spring_12_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
+pc_bs["spring_13_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
+pc_bs["spring_13_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
 
 head(pc_bs)
 #What variables should be kept?
-pc_bs2<-pc_bs[,c("Salinity","d14N_15N","Organic_content","habitat","season","sshc","Grain_size","TP","N")]
+pc_bs2<-pc_bs[,c("Salinity","Si","PO4","DN","Temperature","habitat","season","sshc","Chlorophyll")]
 
 # Identify samples with complete metadata
 print("Total number of samples")
@@ -166,14 +183,17 @@ dare$sch<-as.factor(dare$sch)
 dare$sshc<-as.factor(dare$sshc)
 dare$sc<-as.factor(dare$sc)
 dare$Salinity<-pc_bs2$Salinity[match(dare$sch, pc_bs2$sch)]
-dare$d14N_15N<-pc_bs2$d14N_15N[match(dare$sch, pc_bs2$sch)]
-dare$Organic_content<-pc_bs2$Organic_content[match(dare$sch, pc_bs2$sch)]
-dare$Grain_size<- pc_bs2$Grain_size[match(dare$sch, pc_bs2$sch)]
-dare$TP<- pc_bs2$TP[match(dare$sch, pc_bs2$sch)]
-dare$N<-pc_bs2$N[match(dare$sch, pc_bs2$sch)]
+dare$Si<-pc_bs2$Si[match(dare$sch, pc_bs2$sch)]
+dare$PO4<-pc_bs2$PO4[match(dare$sch, pc_bs2$sch)]
+dare$DN<-pc_bs2$DN[match(dare$sch, pc_bs2$sch)]
+dare$Temperature<-pc_bs2$Temperature[match(dare$sch, pc_bs2$sch)]
+#dare$Oxygen.depletion<- pc_bs2$Oxygen.depletion[match(dare$sch, pc_bs2$sch)]
+dare$Chlorophyll<- pc_bs2$Chlorophyll[match(dare$sch, pc_bs2$sch)]
+#dare$bac_rich<-pc_bs2$bac_rich[match(dare$sch, pc_bs2$sch)]
+#dare$FishingTrawling<-as.factor(pc_bs2$FishingTrawling[match(dare$sch, pc_bs2$sch)])
 
 #Variables to include in the final dataframe
-dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","d14N_15N","Organic_content","Grain_size","TP","N")]
+dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","Si","PO4","DN","Temperature","Chlorophyll")]
 
 #Filtering by rich, abund and sites occurring
 #I.e. picking out the most rich, abundant and frequent classes of species. 
@@ -209,15 +229,15 @@ dataYabund <- dataYabund[, tax_to_keep2]
 #Removing undefined clades
 dataYrich<- dataYrich[, !grepl("NA", names(dataYrich))]
 
-write.table(dare, file = "tmp/Dare_18S_sed_pident90.tsv", sep = "\t", row.names = FALSE)
-write.table(dataYrich, file="tmp/Species_data_18S_sed.tsv", sep= "\t")
+write.table(dare, file = "tmp/Dare_16S_wat.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/Species_data_16S_wat.tsv", sep= "\t")
 
 #Check prevalence and abundance
 P = colMeans(dataYrich>0)
 A = colSums(dataYrich)
 
 #Histogram of scaled richness densities
-pdf("results/sediment/18S/hist_18S_rich_p50prevclass_sediment_plus.pdf")
+pdf("results/Water/16S/hist_16S_rich_p50prevclass_water_plus.pdf")
 par(mfrow=c(1,2))
 hist(P,xlim=c(0,1),breaks = seq(from=0,to=1,by=0.1), col = "grey", xlab = "Prevalence")
 hist(log(A,base=10),breaks=10, col = "grey", xlab = "log10 Richness")
@@ -227,7 +247,7 @@ P = colMeans(dataYabund>0)
 A = colSums(dataYabund)/sum(dataYabund)
 
 #histogram of scaled abundance densities
-pdf("results/sediment/18S/hist_18S_abund_p50prevclass_sediment_plus.pdf")
+pdf("results/Water/16S/hist_16S_abund_p50prevclass_water_plus.pdf")
 par(mfrow=c(1,2))
 hist(P,xlim=c(0,1),breaks = seq(from=0,to=1,by=0.1), col = "grey", xlab = "Prevalence")
 hist(log(A,base=10),breaks=10, col = "grey", xlab = "log10 Abundance")
@@ -262,7 +282,7 @@ for(i in 1:num){
 names(zero.inflated)
 dataYrich1<- dataYrich[, !names(dataYrich) %in% names(zero.inflated)]
 
-write.table(dataYrich1, file="tmp/Species_data_18S_filt_sed.tsv", sep= "\t")
+write.table(dataYrich1, file="tmp/Species_data_16S_filt_wat.tsv", sep= "\t")
 
 ###############################
 #HMSC study design. 
@@ -289,7 +309,7 @@ rl2 = setPriors(rl2,nfMax=5)
 rnd_ef<-list("Time_d"=rl1,"space"=rl2)
 
 #Create formula
-XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + d14N_15N + N + Organic_content + habitat + Grain_size + TP
+XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + Si + PO4 + DN + Temperature + habitat + Chlorophyll
 
 #Set models; abund or rich, evaluate different distributions
 #Lognormal poisson allows more flexible poisson modelling that doesnt need standard deviation being equal to the mean.
@@ -311,7 +331,7 @@ samples = samples, transient = transient,
 nChains = nChains, nParallel = nParallel, verbose = verbose)
 
 #Saving model
-saveRDS(models, file = "results/sediment/18S/18S_sed_241007.rds")
+saveRDS(models, file = "results/Water/16S/16S_wat_241007.rds")
 
 #Diagnostic
 modelsII<-models
@@ -354,14 +374,14 @@ print("Std dev of PSRF")
 sd(gd$psrf)
 
 #Histogram of effective sample size
-pdf("results/sediment/18S/diag_241007.pdf")
+pdf("results/Water/16S/diag_241007.pdf")
 par(mfrow=c(1,2))
 hist(effectiveSize(mpost$Beta), main="ess(beta)")
 hist(gelman.diag(mpost$Beta, multivariate=F)$psrf, main="psrf(beta)")
 dev.off()
 
 #Posterior beta estimation over different iterations gives an idea of parameter convergence for each parameter.
-pdf("results/sediment/18S/diag_beta_241007.pdf")
+pdf("results/Water/16S/diag_beta_241007.pdf")
 plot(mpost$Beta)
 dev.off()
 
