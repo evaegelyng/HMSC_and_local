@@ -4,8 +4,8 @@ library("reshape2")
 library("plyr")
 library("RColorBrewer")
 
-# Load rarefied 70%-similarity dataset (MOTU dataset)
-COSQ_rare<-readRDS("../RDS/COI_no_c2_3reps.rds")
+#Load rarefied dataset
+COSQ_rare<-readRDS("../RDS/16S_no_c2_3reps.rds")
 
 #Taxonomy plots
 
@@ -13,11 +13,11 @@ COSQ_rare<-readRDS("../RDS/COI_no_c2_3reps.rds")
 tudao = filter_taxa(COSQ_rare, function(x) sum(x) > 0, TRUE)
 tudao = prune_samples(sample_sums(tudao)>0,tudao)
 
-#Non-metazoans
-no<-subset_taxa(tudao, !kingdom=="Metazoa")
+#Bacteria
+no<-subset_taxa(tudao, Kingdom=="Bacteria")
 datarg = transform_sample_counts(no, function(x) x/sum(x))
 
-datag = tax_glom(datarg, "phylum")
+datag = tax_glom(datarg, "Phylum")
 TopNOTUs = names(sort(taxa_sums(datag), TRUE)[1:6])
 data9 = prune_taxa(TopNOTUs, datag)
 
@@ -27,8 +27,10 @@ tax<-data.frame(tax_table(data9), stringsAsFactors=FALSE)
 otu<-otu_table(data9)
 otu<-t(data.frame(otu,check.names=F))
 tab<-cbind(tax, otu)
-rownames(tab)<-tab$phylum
-tab<-tab[,-1:-9]
+rownames(tab)<-tab$Phylum
+head(tab)
+#Remove taxonomy columns
+tab<-tab[,-1:-6]
 
 pttab<-t(data.frame(tab,check.names=F))
 ttab<-data.frame(pttab)
@@ -44,6 +46,7 @@ b<-rownames(d)
 if(identical(a,b)==TRUE) {combined<-cbind(ttab, d)}
 
 taxa<-colnames(ttab)
+taxa
 design<-colnames(d)
 
 b<-melt(combined, id=design, measure=taxa)
@@ -53,24 +56,22 @@ cdata2 <- ddply(b, c("season", "substrate_type", "habitat", "cluster", "variable
                mean = mean(value)
 )
 
-colourCount = length(unique(cdata2$variable))
-
 ggplot(data=cdata2, aes(x=as.factor(cluster), y=mean, fill=variable)) + 
-  geom_bar(stat="identity", size=0.05, width=1, colour="black") + 
-  scale_fill_manual(breaks = c("Bacillariophyta", "Chlorophyta", "Discosea", "Ochrophyta", "Oomycota", "Rhodophyta", "Others"), values = brewer.pal(colourCount, "Set2")) +
-  facet_grid(substrate_type+season~habitat, scale="free_x", space="free_x")+ 
-  labs(title="", x ="", y = "Relative abundance", fill = "") + 
-  theme_bw() + scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
-  theme(legend.position = "top", axis.title = element_text(size=16), axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=16), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm")) +
+  geom_bar(stat="identity", linewidth=0.05, width=1, colour="black") + 
+  scale_fill_manual(breaks = c("Acidobacteriota","Actinobacteriota","Bacteroidota", "Desulfobacterota","Myxococcota","Proteobacteria","Others"), values = c("#66C2A5", "#FC8D62", "forestgreen", "deepskyblue1", "#E78AC3", "#FFD92F", "#E5C494")) + 
+  facet_grid(substrate_type+season~habitat, scale="free_x", space="free_x")+ labs(title="", x ="", y = "Relative abundance", fill = "") + theme_bw() + 
+  scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
+  theme(legend.position = "top", axis.title = element_text(size=16), axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=10), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm")) +
   guides(fill = guide_legend(nrow = 1))
-ggsave("../Plots/Stacked_barplots/COI_barplot_stacked_Phylum_nop.pdf")
+ggsave("../Plots/Stacked_barplots/16S_barplot_stacked_Phylum_bac.pdf")
 
-#Phylum - Metazoa
+#Archaea
 
-no<-subset_taxa(tudao, kingdom=="Metazoa")
-datarg = transform_sample_counts(no, function(x) x/sum(x))
+no<-subset_taxa(tudao, Kingdom=="Archaea")
+tudao = prune_samples(sample_sums(no)>0,no)
+datarg = transform_sample_counts(tudao, function(x) x/sum(x))
 
-datag = tax_glom(datarg, "phylum")
+datag = tax_glom(datarg, "Phylum")
 TopNOTUs = names(sort(taxa_sums(datag), TRUE)[1:6])
 data9 = prune_taxa(TopNOTUs, datag)
 
@@ -80,8 +81,9 @@ tax<-data.frame(tax_table(data9), stringsAsFactors=FALSE)
 otu<-otu_table(data9)
 otu<-t(data.frame(otu,check.names=F))
 tab<-cbind(tax, otu)
-rownames(tab)<-tab$phylum
-tab<-tab[,-1:-9]
+rownames(tab)<-tab$Phylum
+#Remove taxonomy columns
+tab<-tab[,-1:-6]
 
 pttab<-t(data.frame(tab,check.names=F))
 ttab<-data.frame(pttab)
@@ -97,6 +99,7 @@ b<-rownames(d)
 if(identical(a,b)==TRUE) {combined<-cbind(ttab, d)}
 
 taxa<-colnames(ttab)
+taxa
 design<-colnames(d)
 
 b<-melt(combined, id=design, measure=taxa)
@@ -106,14 +109,15 @@ cdata2 <- ddply(b, c("season", "substrate_type", "habitat", "cluster", "variable
                mean = mean(value)
 )
 
-colourCount = length(unique(cdata2$variable))
+# Check colour palette from COI plot
+brewer.pal(7,"Paired")
 
 ggplot(data=cdata2, aes(x=as.factor(cluster), y=mean, fill=variable)) + 
-  geom_bar(stat="identity", size=0.05, width=1, colour="black") + 
-  scale_fill_manual(values=brewer.pal(colourCount,"Paired")) +
+  geom_bar(stat="identity", linewidth=0.05, width=1, colour="black") + 
+  scale_fill_manual(breaks = c("Altiarchaeota", "Crenarchaeota", "Euryarchaeota", "Halobacterota", "Nanoarchaeota","Thermoplasmatota", "Others"), values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "brown", "#FB9A99", "#FDBF6F")) + 
   facet_grid(substrate_type+season~habitat, scale="free_x", space="free_x")+ 
   labs(title="", x ="", y = "", fill = "") + 
   theme_bw() + scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
-  theme(legend.position = "top", axis.title = element_text(size=16), axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=16), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm"))+
+  theme(legend.position = "top", axis.title = element_text(size=16),axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=10), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm"))+
   guides(fill = guide_legend(nrow = 1))
-ggsave("../Plots/Stacked_barplots/COI_barplot_stacked_Phylum_m.pdf")
+ggsave("../Plots/Stacked_barplots/16S_barplot_stacked_Phylum_arc.pdf")

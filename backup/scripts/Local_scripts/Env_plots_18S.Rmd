@@ -62,7 +62,7 @@ p2<-ggplot(jaccard_w, aes(x=sea_dist, y=NMDS1, shape = habitat, lty=habitat)) +
    stat_poly_line() +
    stat_poly_eq(label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))
 p2
-ggsave(file="../Plots/Env_plots/Sea_dist_18S_both.png",ggarrange(p,p2,ncol=2,nrow=2,align="h",common.legend=TRUE,legend="top"))
+ggsave(file="../Plots/Env_plots/Sea_dist_18S_both.png",ggarrange(p,p2,ncol=2,nrow=2,align="h",common.legend=TRUE,legend="top"),height=8)
 ```
 
 ```{r salinity sed}
@@ -97,7 +97,7 @@ p4<-ggplot(jaccard_w, aes(x=salinity, y=NMDS1, shape = habitat, lty=habitat)) +
    stat_poly_line() +
    stat_poly_eq(label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))
 p4
-ggsave(file="../Plots/Env_plots/Salinity_18S_both.png",ggarrange(p3,p4,ncol=2,nrow=2,align="h",common.legend=TRUE,legend="top"))
+ggsave(file="../Plots/Env_plots/Salinity_18S_both.png",ggarrange(p3,p4,ncol=2,nrow=2,align="h",common.legend=TRUE,legend="top"),height=8)
 ```
 ```{r org sed}
 

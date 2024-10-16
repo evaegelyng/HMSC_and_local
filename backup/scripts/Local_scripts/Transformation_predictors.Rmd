@@ -11,10 +11,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r load data}
 
-coord <- read.delim("../../Tekstfiler/merged_metadata_230427.txt",row.names=1)
-new.vars<-read.delim("../../Tekstfiler/Spatial_values.csv",sep=",")
-fsed<- read.table("../../Tekstfiler/sed_metadata.txt", sep="\t", header=T)
-fwat<-read.table("../../Tekstfiler/wat_metadata.txt", sep="\t", header=T)
+coord <- read.delim("../Tekstfiler/merged_metadata_230427.txt",row.names=1)
+new.vars<-read.delim("../Tekstfiler/Spatial_values_240430.csv",sep=",")
+fsed<- read.table("../Tekstfiler/sed_metadata.txt", sep="\t", header=T)
+fwat<-read.table("../Tekstfiler/wat_metadata.txt", sep="\t", header=T)
 ```
 
 ```{r histograms sed}
@@ -68,6 +68,8 @@ hist(fwat$d18O,col = "grey", xlab = "d18O")
 
 hist(new.vars$Oxygen.depletion, col="grey", xlab = "Oxygen depletion")
 hist(log(new.vars$Oxygen.depletion), col="grey", xlab = "log Oxygen depletion")
+hist(new.vars$Fisheries, col="grey", xlab = "Fishing intensity",breaks=35)
+
 ```
 
 

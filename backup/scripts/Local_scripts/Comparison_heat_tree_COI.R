@@ -275,5 +275,5 @@ plots[[3]]<-wat_spr
 plots[[4]]<-wat_aut
 
 p<-ggarrange(plots[[1]],plots[[2]],plots[[3]],plots[[4]],ncol=2,nrow=2,align="h")
-ggsave(file="../Plots/Heattrees_COI.pdf",annotate_figure(p,top="Spring                                                                                 Autumn",
+ggsave(file="../Plots/Heattrees/Heattrees_COI.pdf",annotate_figure(p,top="Spring                                                                                 Autumn",
                                                          left="Water                                                                Sediment"))

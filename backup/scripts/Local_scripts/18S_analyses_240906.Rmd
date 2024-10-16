@@ -1,12 +1,12 @@
 ---
-title: "MOTU analyses"
+title: "18S analyses"
 author: "Eva Egelyng Sigsgaard"
-date: "2023-09-12"
+date: "2023-09-29"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE,fig.path = "images/")
 ```
 
 ```{r libraries, message=FALSE}
@@ -15,18 +15,26 @@ library(vegan)
 library(RColorBrewer)
 library(ggplot2)
 library(ggpubr)
+library(ggrepel)
 library(phyloseq)
 library(Rarity)
 library(VennDiagram)
+library(tibble)
 ```
 
 ```{r load data}
 
-## Get phyloseq object
-COSQ_rare2_70 <- readRDS("../RDS/COSQ_rare2_correct_score_tax.rds")
+## Get rel abun OTU table
+#otus1<-read.table("../Tekstfiler/18S/otu_rel_hel_97.txt", sep="\t", row.names = 1, header=T)
 
-# Load metadata
-metadata<-sample_data(COSQ_rare2_70)
+## Get rarefied OTU table
+otus1<-read.table("../Tekstfiler/18S/otu_rarefy_97.txt")
+
+## Get tax table
+taxa<-read.table("../Tekstfiler/18S/tax_rarefy_97.txt", sep="\t", row.names = 1, header=T)
+
+##Get metadata
+metadata<-read.table("../Tekstfiler/18S/metadata_rarefy_97.txt", sep="\t", header=T)
 
 ## Get more metadata
 areas<-read.table("../Tekstfiler/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
@@ -42,23 +50,24 @@ metadata$New_Area<-areas$New_Area[match(metadata$cluster,areas$Cluster)]
 
 ```{r final filtering}
 
-# Make new phyloseq object with extended metadata
-OTU_COI = otu_table(COSQ_rare2_70, taxa_are_rows = TRUE)
-TAX_S = tax_table(COSQ_rare2_70)
-p_COI = phyloseq(OTU_COI, TAX_S)
+###Make phyloseq object
+tax_mat_b<-as.matrix(taxa)
+OTU = otu_table(otus1, taxa_are_rows = FALSE)
+TAX_b = tax_table(tax_mat_b)
+p_NCBI = phyloseq(OTU, TAX_b)
 
-## Add metadata
-sampledatas = sample_data(data.frame(metadata, row.names=metadata$root, stringsAsFactors=FALSE))
-COSQ_new = merge_phyloseq(p_COI, sampledatas)
-COSQ_new
+##Add metadata
+sampledata = sample_data(data.frame(metadata, row.names=metadata$sample_root, stringsAsFactors=FALSE))
+DADAwang1 = merge_phyloseq(p_NCBI, sampledata)
+DADAwang1
 
-## Remove cluster 2 (which was only sampled in 1 season)
-COSQ_70_no_c2<-subset_samples(COSQ_new,!cluster==2)
-COSQ_70_no_c2 # 6 field reps removed
+##Remove cluster 2, which was only sampled in one season
+DADAwang1<-subset_samples(DADAwang1, !cluster==2)
+DADAwang1 # 6 field reps removed
 
 #Select only samples with 3 replicates
-DADAwang1<-subset_samples(COSQ_70_no_c2, bio_reps==3)
-DADAwang1 # 12 field reps (6 samples) removed
+DADAwang1<-subset_samples(DADAwang1, bio_reps==3)
+DADAwang1 # 4 field reps removed
 
 # Merge field replicates
 DT1<-merge_samples(DADAwang1, "sshc", fun = mean)
@@ -76,13 +85,13 @@ d$substrate_type<-metadata$substrate_type[match(rownames(d),metadata$sshc)]
 sample_data(DT1)<-d[,c("sshc","sch","cluster","season","habitat","substrate_type")]
 
 #Export phyloseq object as rds file
-saveRDS(DT1,file="../RDS/COI_no_c2_3reps.rds")
+#saveRDS(DT1,file="../RDS/18S_no_c2_3reps_pident90_lulu97.rds")
 
-## Get OTU table
+## Get cleaned OTU table
 rep_agg<-data.frame(otu_table(DT1),check.names=F)
 
 ## Get taxonomy
-tax_70<-data.frame(tax_table(DT1))
+tax<-data.frame(tax_table(DT1))
 ```
 
 
@@ -119,7 +128,7 @@ rep_agg_pa$sc<-metadata$sc[match(row.names(rep_agg_pa),metadata$sshc)]
 length(unique(rep_agg_pa$sc)) # 62
 hab_reps<-rep_agg_pa %>% group_by(sc) %>% summarise(n=n())
 six_hreps<-filter(hab_reps,n=="6")
-nrow(six_hreps) # 28
+nrow(six_hreps) # 32
 rep_6hab<-rep_agg_pa[rep_agg_pa$sc %in% six_hreps$sc, ]
 
 ##Convert to presence/absence
@@ -139,6 +148,7 @@ is_outlier <- function(x) {
 
 dat <- rep_6hab %>% tibble::rownames_to_column(var="outlier") %>% group_by(habitat,season,Substrate) %>% mutate(is_outlier=ifelse(is_outlier(rich), rich, as.numeric(NA)))
 dat$outlier[which(is.na(dat$is_outlier))] <- as.numeric(NA)
+dat$cluster<-metadata$cluster[match(dat$outlier,metadata$sshc)]
 
 # grouped boxplot
 box_rich<-ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
@@ -149,66 +159,17 @@ box_rich<-ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) +
   xlab("") + ylab("MOTU richness")+
   facet_grid(. ~ season)+ 
   theme(legend.position = "top", text = element_text(size = 18))+
-  geom_text(aes(label=outlier),na.rm=TRUE,nudge_y=0.05)
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)
 
-ggsave(file="../Plots/Boxplots/COI_MOTU_rich.png",box_rich)
+saveRDS(box_rich,"../Plots/Boxplots/18S_rich.rds")
+#ggsave(file="../Plots/Boxplots/18S_rich.png",box_rich)
+#ggsave(file="../Plots/Boxplots/18S_rich_rel.png",box_rich)
 ```
 
-```{r venn both}
-
-# Subset to clusters where all three habitats were sampled
-rep_agg$sc<-metadata$sc[match(row.names(rep_agg),metadata$sshc)]
-length(unique(rep_agg$sc)) # 62
-hab_reps<-rep_agg %>% group_by(sc) %>% summarise(n=n())
-three_hreps<-filter(hab_reps,n=="6")
-nrow(three_hreps) # 28
-both_3hab<-rep_agg[rep_agg$sc %in% three_hreps$sc, ]
-
-# Subset to each habitat
-both_3hab$habitat<-metadata$habitat[match(row.names(both_3hab),metadata$sshc)]
-
-eel<-both_3hab[both_3hab$habitat=="eelgrass",]
-rock<-both_3hab[both_3hab$habitat=="rocks",]
-sand<-both_3hab[both_3hab$habitat=="sand",]
-
-# Remove unnecessary columns
-eel<-within(eel,rm(habitat,sc,Substrate))
-rock<-within(rock,rm(habitat,sc,Substrate))
-sand<-within(sand,rm(habitat,sc,Substrate))
-
-##Convert to presence/absence
-eel[eel>0]<-1
-rock[rock>0]<-1
-sand[sand>0]<-1
-
-# Make species list for each habitat
-eel<-eel[,colSums(eel)>0]
-eel_sp<-colnames(eel)
-
-rock<-rock[,colSums(rock)>0]
-rock_sp<-colnames(rock)
-
-sand<-sand[,colSums(sand)>0]
-sand_sp<-colnames(sand)
-
-venn.diagram(
-  x = list(eel_sp,rock_sp,sand_sp),
-  category.names = c("Eelgrass" , "Rocks", "Sand"),
-  lwd = 3,
-  fill = c("yellowgreen", "cornflowerblue","thistle3"),
-  filename = '../Plots/Venn/motus_both.png',
-  cat.cex = 1,
-  cat.fontface = "bold",
-  output=T
-)
-
-rep_agg<-within(rep_agg,rm(sc))
-```
 
 ```{r venn sed}
 
 # Subset to clusters where all three habitats were sampled
-metadata$sc<-paste(metadata$season,metadata$cluster,sep="_")
 sed$sc<-metadata$sc[match(row.names(sed),metadata$sshc)]
 length(unique(sed$sc)) # 62
 hab_reps<-sed %>% group_by(sc) %>% summarise(n=n())
@@ -242,7 +203,8 @@ venn.diagram(
   category.names = c("Eelgrass" , "Rocks", "Sand"),
   lwd = 3,
   fill = c("yellowgreen", "cornflowerblue","thistle3"),
-  filename = '../Plots/Venn/motus_sed.png',
+  filename = '../Plots/Venn/18S_sed.png',
+  #filename = '../Plots/Venn/18S_sed_rel.png',
   cat.cex = 2,
   cex=2,
   margin=0.05,
@@ -257,7 +219,7 @@ sed<-within(sed,rm(sc))
 
 # Subset to clusters where all three habitats were sampled
 wat$sc<-metadata$sc[match(row.names(wat),metadata$sshc)]
-length(unique(wat$sc)) # 62
+length(unique(wat$sc)) # 63
 hab_reps<-wat %>% group_by(sc) %>% summarise(n=n())
 three_hreps<-filter(hab_reps,n=="3")
 nrow(three_hreps) # 32
@@ -274,7 +236,7 @@ eel<-within(eel,rm(habitat,sc))
 rock<-within(rock,rm(habitat,sc))
 sand<-within(sand,rm(habitat,sc))
 
-# Make species list for each habitat
+# Make OTU list for each habitat
 eel<-eel[,colSums(eel)>0]
 eel_sp<-colnames(eel)
 
@@ -289,7 +251,8 @@ venn.diagram(
   category.names = c("Eelgrass" , "Rocks", "Sand"),
   lwd = 3,
   fill = c("yellowgreen", "cornflowerblue","thistle3"),
-  filename = '../Plots/Venn/motus_wat.png',
+  filename = '../Plots/Venn/18S_wat.png',
+  #filename = '../Plots/Venn/18S_wat_rel.png',
   cat.cex = 2,
   cex=2,
   margin=0.05,
@@ -300,56 +263,17 @@ venn.diagram(
 wat<-within(wat,rm(sc))
 ```
 
-```{r nmds}
-
-##Convert to presence/absence
-both<-within(rep_agg,rm(Substrate))
-both[both>0]<-1
-
-#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
-
-## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
-
-  set.seed(123)
-  allmds <- metaMDS(both, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
-
-  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
-  site_scrs$Substrate <- metadata$substrate_type[match(row.names(site_scrs), metadata$sshc)]
-
-  cent <- aggregate(cbind(NMDS1, NMDS2) ~ Substrate, data=site_scrs, FUN = mean)
-  segs <- merge(site_scrs, setNames(cent, c("Substrate", "oNMDS1", "oNMDS2")), by = "Substrate", sort=FALSE)
-
-  nmds_both<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = Substrate)) + 
-  scale_color_manual(values = c('#d8b365','#5ab4ac'),
-                     name = "", breaks = unique(metadata$substrate_type),
-                     labels = unique(metadata$substrate_type)) +
-  geom_point(alpha=1) +
-  coord_fixed() +
-  theme_classic() + 
-  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))+
-  ggtitle("")
-
-  plots_sub<-list()
-  plots_sub[[1]]<-nmds_both
-  
-# Read NMDS plot for 18S data
-  plots_sub[[2]]<-readRDS(file="../Plots/NMDS/NMDS_18S_both.rds")
-  
-  ggsave(file="../Plots/NMDS/NMDS_both_substrates.png",ggarrange(plots_sub[[1]],plots_sub[[2]],ncol=1,nrow=2,align="h",common.legend=TRUE,legend="top"))
-```
-
 ```{r nmds sed habitat}
 
-#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+  #NB., the number of points n should be n > 2k + 1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
 
 ## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
 
-  cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
-
   set.seed(123)
-  sed_nmds <- metaMDS(sed, distance = "jaccard", autotransform = FALSE, maxit=999, k=2, trymax=250)
+  allmds <- metaMDS(sed, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
 
-  site_scrs <- as.data.frame(scores(sed_nmds, display = "sites"))
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+
   site_scrs$habitat <- metadata$habitat[match(row.names(site_scrs), metadata$sshc)]
   site_scrs$season <- metadata$season[match(row.names(site_scrs), metadata$sshc)]
   
@@ -358,6 +282,8 @@ both[both>0]<-1
 
   plots_hab<-list()
   
+  cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
+
   nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
   scale_color_manual(values = cols,
                      name = "", breaks = unique(metadata$habitat),
@@ -365,22 +291,21 @@ both[both>0]<-1
   geom_point(alpha=1) +
   coord_fixed() +
   theme_classic() + 
-  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6),axis.title.x = element_blank())+
+  theme(legend.position = "top", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6), axis.title.x = element_blank())+
   ggtitle("")
 
-  plots_hab[[1]]<-nmds_sed
+  saveRDS(nmds_sed,"../Plots/NMDS/NMDS_18S_hab_sed.rds")
+
+  #plots_hab[[1]]<-nmds_sed
 ```
 
 ```{r nmds wat habitat}
 
-#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
-
-## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
-
   set.seed(123)
-  wat_nmds <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+  allmds_w <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
 
-  site_scrs_w <- as.data.frame(scores(wat_nmds, display = "sites"))
+  site_scrs_w <- as.data.frame(scores(allmds_w, display = "sites"))
+
   site_scrs_w$habitat <- metadata$habitat[match(row.names(site_scrs_w), metadata$sshc)]
   site_scrs_w$season <- metadata$season[match(row.names(site_scrs_w), metadata$sshc)]
   
@@ -396,12 +321,15 @@ both[both>0]<-1
   geom_point(alpha=1) +
   coord_fixed() +
   theme_classic() + 
-  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6),axis.title.x = element_blank())+
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6), axis.title.x = element_blank())+
   ggtitle("")
 
-  plots_hab_w[[1]]<-nmds_wat
+  saveRDS(nmds_wat,"../Plots/NMDS/NMDS_18S_hab_wat.rds")
+
+  #plots_hab_w[[1]]<-nmds_wat
   
- ggsave(file="../Plots/NMDS/NMDS_70_both_hab.png",ggarrange(plots_hab[[1]],plots_hab_w[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="top"))
+ #ggsave(file="../Plots/NMDS/NMDS_18S_both_hab.png",ggarrange(plots_hab[[1]],plots_hab_w[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+ #ggsave(file="../Plots/NMDS/NMDS_18S_both_hab_rel.png",ggarrange(plots_hab[[1]],plots_hab_w[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
 ```
 
 ```{r nmds sed salinity}
@@ -416,25 +344,25 @@ site_scrs$salinity <- metadata$salinity[match(row.names(site_scrs), metadata$ssh
 cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs, FUN = mean)
 segs <- merge(site_scrs, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
 
-  # set breaks and colours
+# set breaks and colours
 breaks <- c(7,11,17,22,27,33)
-breaks
-
 cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
 
 plots<-list()
 
   nmds_sal<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2)) + 
-  scale_colour_stepsn(colours = cols,
+  scale_colour_stepsn(colours = rev(cols),
                     breaks = breaks,
                     name = "Salinity") +
   geom_point(alpha=1, aes(colour = salinity, shape = season)) +
   coord_fixed() +
   theme_classic() + 
-  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6),axis.title.x = element_blank())+
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6), axis.title.x = element_blank())+
   ggtitle("")
   
-  plots[[1]]<-nmds_sal
+  saveRDS(nmds_sal,"../Plots/NMDS/NMDS_18S_sal_sed.rds")
+
+  #plots[[1]]<-nmds_sal
 ```
 
 ```{r nmds wat salinity}
@@ -445,25 +373,61 @@ site_scrs_w$salinity <- metadata$salinity[match(row.names(site_scrs_w), metadata
 cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs_w, FUN = mean)
 segs <- merge(site_scrs_w, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
 
-  # set breaks and colours
+# set breaks and colours
 breaks <- c(7,11,17,22,27,33)
-breaks
-
 cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
 
 plots_wat<-list()
 
   nmds_sal_w<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2)) + 
-  scale_colour_stepsn(colours = cols,
+  scale_colour_stepsn(colours = rev(cols),
                     breaks = breaks,
                     name = "Salinity") +
   geom_point(alpha=1, aes(colour = salinity, shape = season)) +
   coord_fixed() +
   theme_classic() + 
-  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6),axis.title.x = element_blank())+
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6), axis.title.x = element_blank())+
   ggtitle("")
   
-  plots_wat[[1]]<-nmds_sal_w
+  saveRDS(nmds_sal_w,"../Plots/NMDS/NMDS_18S_sal_wat.rds")
+
+  #plots_wat[[1]]<-nmds_sal_w
   
-  ggsave(file="../Plots/NMDS/NMDS_70_both_sal.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="top"))
+  #ggsave(file="../Plots/NMDS/NMDS_18S_both_sal.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+  #ggsave(file="../Plots/NMDS/NMDS_18S_both_sal_rel.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+```
+
+```{r nmds both}
+
+##Convert to presence/absence
+both<-within(rep_agg,rm(Substrate))
+both[both>0]<-1
+
+#NB., the number of points n should be n > 2k + 1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(both, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$Substrate <- metadata$substrate_type[match(row.names(site_scrs), metadata$sshc)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ Substrate, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("Substrate", "oNMDS1", "oNMDS2")), by = "Substrate", sort=FALSE)
+
+  nmds_both<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = Substrate)) + 
+  #geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = unique(metadata$substrate_type),
+                     labels = unique(metadata$substrate_type)) +
+  #geom_point(data = cent, size = 5) +
+  geom_point(alpha=1) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6), axis.title.x = element_blank())+
+  ggtitle("")
+
+  saveRDS(nmds_both,"../Plots/NMDS/NMDS_18S_both.rds")
+  #ggsave(nmds_both,file="../Plots/NMDS/NMDS_18S_both.png")
 ```

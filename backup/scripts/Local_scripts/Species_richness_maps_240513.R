@@ -12,54 +12,43 @@ library(tibble)
 #### 1. Create a df with mean no. of species pr sample + coordinate data####
 
 # Load rds file with normalized 97-data
-COSQ_rare2_97 <- readRDS("../RDS/COSQ_rare2_correct_pident97.rds")
+COSQ_rare2_97 <- readRDS("../RDS/COI_97_no_c2_3reps.rds")
 COSQ_rare2_97
-#phyloseq-class experiment-level object
-#otu_table()   OTU Table:         [ 489 taxa and 931 samples ]
-#sample_data() Sample Data:       [ 931 samples by 7 sample variables ]
-#tax_table()   Taxonomy Table:    [ 489 taxa by 9 taxonomic ranks ]
 
-## Remove cluster 2 (which was only sampled in 1 season)
-COSQ_no_c2<-subset_samples(COSQ_rare2_97,!cluster==2)
-
-# Extract sample data
-meta<-data.frame(sample_data(COSQ_no_c2), check.names=F)
+# Extract sample data, taxonomy and OTU table
+meta<-data.frame(sample_data(COSQ_rare2_97), check.names=F)
+tax<-data.frame(COSQ_rare2_97@tax_table)
+otus<-data.frame(COSQ_rare2_97@otu_table, check.names=F)
 
 # Load further metadata
-#metadata <- read.delim("../Tekstfiler/no_control_no_sing_samples_cleaned_metadata_ASV_wise.txt")
 coord <- read.delim("../Tekstfiler/merged_metadata_230427.txt",row.names=1)
 
-# merge taxonomy and otu table from the phyloseq object
-otu_tab<-merge(COSQ_no_c2@tax_table,COSQ_no_c2@otu_table,by="row.names")
-
-# keep only final.id of the taxonomy columns
-otu_tab1 <- otu_tab[,c(-1:-9)]
-
-# Count number of species
-length(unique(otu_tab$final.id))
-#474
-
-## Aggregate MOTUs from the same species, summing read counts
-species_agg<-aggregate(. ~ final.id, otu_tab1, sum)
-row.names(species_agg) <- species_agg$final.id
-species_agg <- within(species_agg,rm(final.id))
-
 ##Convert to presence/absence
+species_agg<-as.data.frame(t(otus))
 species_agg[species_agg>0]<-1
 
-## Calculate total richness pr sample, sum of counts in each sample pr phylum
+## Calculate total species richness pr sample
 sample_rich<-species_agg %>%
   colSums
 sample_rich<-data.frame(sample_rich)
 
 ## Add richness to metadata object
-meta$rich<-sample_rich$sample_rich[match(row.names(sample_rich),meta$root)]
+meta$rich<-sample_rich$sample_rich[match(row.names(sample_rich),meta$sshc)]
+
+## Add substrate_type x habitat x cluster variable
+meta$shc<-paste(meta$substrate_type, meta$habitat, meta$cluster, sep="_")
+
+##Check which sites have data for both seasons
+season_reps<-meta %>% group_by(shc) %>% summarise(n=n())
+meta$season_reps<-season_reps$n[match(meta$shc,season_reps$shc)]
+##Remove sites with data for only one season
+meta<-subset(meta,season_reps==2)
 
 ## Remove unnecessary columns
-meta<-within(meta,rm("field_replicate","over_median","root","season"))
+meta<-within(meta,rm("sshc","sch","season","season_reps"))
 
-## Aggregate sample replicates, calculating the mean richness per sample replicate across seasons
-meta_agg<-aggregate(. ~ cluster + habitat + substrate_type, meta, mean)
+## Calculating the mean richness across seasons
+meta_agg<-aggregate(. ~ cluster + habitat + substrate_type + shc, meta, mean)
 
 
 ##### 2. Create a map #####

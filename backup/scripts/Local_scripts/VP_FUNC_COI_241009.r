@@ -11,9 +11,8 @@ Variance partitioning, but now a cool function grinding out all the noise and tr
 '
 
 
-
-#THis first function calculates the variance partitioning, flips and flops the table for plotting entrance
-#the grouping is basically for grouping taxa under higher levels(etc. phylum). 
+#This first function calculates the variance partitioning
+#the grouping is for grouping taxa under higher taxonomic levels. 
 compute_var<- function(model,tax_group=NULL,variables=NULL){
   
   VP = computeVariancePartitioning(model)
@@ -105,7 +104,7 @@ compute_var<- function(model,tax_group=NULL,variables=NULL){
 
 
 
-#this is our plotting function, it should not be a hustle to quickly go into the function and add a ylab or something extra if need be :-)
+#this is our plotting function
 
 var_Plot<- function(var_table,title=NULL,x_title=NULL,y_title=NULL,grouping=NULL,color_pallette=NULL){
   var_table$variables<-
@@ -170,7 +169,7 @@ var_Plot<- function(var_table,title=NULL,x_title=NULL,y_title=NULL,grouping=NULL
 
       clade=colnames(grouping)[length(colnames(grouping))]
       
-      var_table<- var_table[order(var_table$Division,var_table$Phylum,var_table$clade,var_table$variables),]
+      var_table<- var_table[order(var_table$kingdom,var_table$phylum,var_table$class,var_table$clade,var_table$variables),]
       
       for(i in 2:length(colnames(grouping))){
         clade=colnames(grouping)[i]
@@ -225,7 +224,7 @@ var_Plot<- function(var_table,title=NULL,x_title=NULL,y_title=NULL,grouping=NULL
     
     if(!is.null(grouping)){
       plots<- plots+ 
-        facet_grid(Division+Phylum~., 
+        facet_grid(kingdom+phylum+class~., 
                  scales = "free", # Let the x axis vary across facets.
                  space = "free",  # Let the width of facets vary and force all bars to have the same width.
                  switch = "y")
@@ -235,18 +234,17 @@ var_Plot<- function(var_table,title=NULL,x_title=NULL,y_title=NULL,grouping=NULL
   }
 
 
-model<- readRDS("../RDS/18S_240426.rds")
-model_w<- readRDS("../RDS/18S_wat_240426.rds")
+model<- readRDS("../RDS/COI_sed_241007.rds")
+model_w<- readRDS("../RDS/COI_wat_241007.rds")
 
-COSQ_rare2<-readRDS("../RDS/18S_no_c2_3reps.rds")
-OTU_18S = otu_table(COSQ_rare2, taxa_are_rows = TRUE)
+COSQ_rare2<-readRDS("../RDS/COI_no_c2_3reps.rds")
 TAX_S = tax_table(COSQ_rare2)
 tax <- data.frame(TAX_S,rownames=F)
-tax<- tax[,c("Class","Phylum","Division")]
+tax<- tax[,c("order","class","phylum","kingdom")]
 
 '
-This is all we need. remember if you have a higher taxa level you wanna group under insert the table.
-The taxonomic grouping should be in the 2nd column and the first should be the responce variable taxa group as illustrated just abve.
+This is all we need. remember if you have a higher taxa level you want to group under, insert the table.
+The taxonomic grouping should be in the 2nd column and the first should be the response variable taxa group as illustrated just abve.
 
 function(model,tax_group=NULL,variables=NULL)
 The variables function specifies the names of the variables, as it can be inconvenient with salinity or random effects
@@ -263,15 +261,15 @@ unique(variance$variables)
 
 variance <- variance %>% mutate(variables=recode(variables,"poly.Salinity..degree...2..raw...TRUE."="Salinity","d14N_15N"="d15N",
                     "habitat"="Habitat","N"="Nitrogen","TP"="Total phosporus",
-                    "Grain_size"="Grain size","Organic_content"="Organic content","Oxygen.depletion"="Oxygen depletion",
-                    "bac_rich"="Bacterial ASV richness","FishingTrawling"="Fishing","Random..Time_d"="Time (random)",
+                    "Grain_size"="Grain size","Organic_content"="Organic content",
+                    "Random..Time_d"="Time (random)",
                    "Random..space"="Space (random)","residual"="Residual"))
 
 unique(variance_w$variables)
 
 variance_w <- variance_w %>% mutate(variables=recode(variables,"poly.Salinity..degree...2..raw...TRUE."="Salinity","d14N_15N"="d15N",
                                                  "habitat"="Habitat","Si"="Silicate","PO4"="Phosphate","DN"="Dissolved nitrogen",
-                                                 "Oxygen.depletion"="Oxygen depletion","bac_rich"="Bacterial ASV richness","FishingTrawling"="Fishing","Random..Time_d"="Time (random)",
+                                                 "Random..Time_d"="Time (random)",
                                                  "Random..space"="Space (random)","residual"="Residual"))
                                                  
 
@@ -286,47 +284,41 @@ salinity1="#386CB0"
 CubeN="#FDC086"
 Organic_content="#BF5B17"
 N="#F0027F"
-Habitat="#B3CDE3"
+Habitat="darkgreen"
 Grain_size="#666666"
 TP= "red"
-Oxygen_Depletion= "#FFFF99"
-Bac_rich = "darkgreen"
-Fishing = "purple"  
 Random_Time_d="#8DA0CB"
 Random_space="black"
 residual="#F2F2F2"
 
+# The variables in the pallette currently need to be manually ordered!
 color_pallette=c(salinity1,
-                 Habitat,
-                 Organic_content,
-                 N,
-                 Oxygen_Depletion,
-                 Grain_size,
-                 Bac_rich,
-                 CubeN,
-                 TP,
-                 Fishing,
+                Habitat,
+                N,
+                Organic_content,
+                Grain_size,
+                TP,
+                CubeN,
                  Random_Time_d,
                  Random_space,
                  residual)
                  
 #Water colours and pallette
 Si="#BEAED4"
-PO4="#FDC086"
-DN="#666666"
-Temperature="red"
+PO4="purple"
+DN="#FFFF99"
+Temperature="#B3CDE3"
 Chlorophyll="#7FC97F"
 
+# The variables in the pallette currently need to be manually ordered!
+
 color_pallette_water=c(salinity1,
-                 Bac_rich,
-                 PO4,
-                 Fishing,
-                 Temperature,
-                 Habitat,
-                 Si,
-                 Chlorophyll,
-                 DN,
-                 Oxygen_Depletion,
+                       Habitat,
+                       PO4,
+                       Temperature,
+                       Chlorophyll,
+                       Si,
+                       DN,
                  Random_Time_d,
                  Random_space,
                  residual)
@@ -336,11 +328,11 @@ x_title="",
 y_title="Explained variance",
 grouping=tax, color_pallette=color_pallette)
 
-ggsave("../Plots/18S_varpar_sed_240426.png", plot = the_plot, width=12, height=9)
+ggsave("../Plots/Var_par/COI_varpar_sed.png", plot = the_plot, width=12, height=9)
 
 water_plot<- var_Plot(variance_w,title="",
 x_title="",
 y_title="Explained variance",
 grouping=tax, color_pallette=color_pallette_water)
 
-ggsave("../Plots/18S_varpar_wat_240426.png", plot = water_plot, width=12, height=9)
+ggsave("../Plots/Var_par/COI_varpar_wat.png", plot = water_plot, width=12, height=9)

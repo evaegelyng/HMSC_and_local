@@ -9,36 +9,63 @@ library(tidyverse)
 library(magrittr)
 library(phyloseq)
 library(dplyr)
-library(leaflet.minicharts)
+#library(leaflet.minicharts)
 library(leaflegend)
 ```
 
 ```{r load data}
 
-#Load RDS objects
-sed<-readRDS("../RDS/sed_pres_abs.rds")
-wat<-readRDS("../RDS/wat_pres_abs.rds")
+#Load phyloseq object
+COSQ_rare2_97<-readRDS("../RDS/COI_97_no_c2_3reps.rds")
 
 ## Load metatable incl. coordinates, and add column for later use
 coord <- read.delim("../Tekstfiler/merged_metadata_230427.txt",row.names=1)
 coord$cluster.c<-paste("c",coord$cluster,sep="")
 
-## Load phyloseq object
-COSQ_rare2_97 <- readRDS("C:/Users/au620760/OneDrive - Aarhus universitet/COSQ_results_2023/Eva/RDS/COSQ_rare2_correct_pident97.rds")
-## Remove cluster 2 (which was only sampled in 1 season)
-COSQ_no_c2<-subset_samples(COSQ_rare2_97,!cluster==2)
-## Extract metadata and add column with one name for each sample triplicate
-meta<-data.frame(sample_data(COSQ_no_c2),check.names=FALSE)
-meta$sample<-factor(substr(row.names(meta),
-                          1,
-                          nchar(row.names(meta))-1))
+## Extract metadata and OTU table
+sam<-data.frame(sample_data(COSQ_rare2_97),check.names=FALSE)
+otus<-data.frame(COSQ_rare2_97@otu_table, check.names=F)
+## Add substrate_type x habitat x cluster variable
+sam$shc<-paste(sam$substrate_type, sam$habitat, sam$cluster, sep="_")
 ```
+
+```{r filter and subset}
+
+##Check which sites have data for both seasons
+season_reps<-sam %>% group_by(shc) %>% summarise(n=n())
+#Select only samples with 3 replicates
+two_reps<-filter(season_reps,n=="2")
+otus$shc<-sam$shc[match(row.names(otus),sam$sshc)]
+##Remove sites with data for only one season
+rep_agg<-otus[otus$shc %in% two_reps$shc,]
+
+rep_agg$Substrate<-sam$substrate_type[match(row.names(rep_agg),sam$sshc)]
+
+#Subset data to sediment and water
+sed<-rep_agg[rep_agg$Substrate=="sediment",]
+sed<-within(sed,rm(Substrate,shc))
+wat<-rep_agg[rep_agg$Substrate=="water",]
+wat<-within(wat,rm(Substrate,shc))
+
+## Remove empty samples
+sed<-sed[rowSums(sed[])>0,] 
+wat<-wat[rowSums(wat[])>0,] 
+
+# Remove empty colums (species)
+sed<-sed[colSums(sed)>0]
+wat<-wat[colSums(wat)>0]
+
+##Convert to presence/absence
+sed[sed>0]<-1
+wat[wat>0]<-1
+```
+
 
 ```{r aggregate sed}
 
 # Aggregate samples from the two seasons
-sed$cluster<-meta$cluster[match(row.names(sed),meta$sample)]
-sed$habitat<-meta$habitat[match(row.names(sed),meta$sample)]
+sed$cluster<-sam$cluster[match(row.names(sed),sam$sshc)]
+sed$habitat<-sam$habitat[match(row.names(sed),sam$sshc)]
 sed_agg<-aggregate(. ~ cluster + habitat, sed, function(x) sum(x))
 
 # Subset into the three habitat types
@@ -61,7 +88,7 @@ eel[eel>0]<-1
 rock[rock>0]<-1
 sand[sand>0]<-1
 
-# Remove empty colums (species)
+# Remove empty columns (species)
 eel<-eel[colSums(eel)>0]
 rock<-rock[colSums(rock)>0]
 sand<-sand[colSums(sand)>0]
@@ -70,8 +97,8 @@ sand<-sand[colSums(sand)>0]
 ```{r aggregate wat}
 
 # Aggregate samples from the two seasons
-wat$cluster<-meta$cluster[match(row.names(wat),meta$sample)]
-wat$habitat<-meta$habitat[match(row.names(wat),meta$sample)]
+wat$cluster<-sam$cluster[match(row.names(wat),sam$sshc)]
+wat$habitat<-sam$habitat[match(row.names(wat),sam$sshc)]
 wat_agg<-aggregate(. ~ cluster + habitat, wat, function(x) sum(x))
 
 # Subset into the three habitat types
@@ -119,9 +146,9 @@ rarity.leroy <- rWeights(occ, Qmax = max(occ), Qmin = min(occ),
                          wMethods = "invQ", rCutoff = "Leroy", normalised = T,
                          assemblages = occ_t, extended = F, rounding = 3)
 
-## Rarity cut-off point: 0.2861328 / 4.578125 
-## Rarity cut-off point: 0.2283092 / 6.620968 
-## Rarity cut-off point: 0.2073361 / 6.427419 
+#Rarity cut-off point: 0.2861328 / 4.578125 
+#Rarity cut-off point: 0.2348214 / 6.575 
+#Rarity cut-off point: 0.2141667 / 6.425 
 
 # Calculation of Isr
 Isr_leroy<-Isr(occ_t, rarity.leroy, abundance = FALSE, Wmin = min(rarity.leroy), normalise = TRUE)
@@ -149,9 +176,9 @@ rarity.leroy <- rWeights(occ, Qmax = max(occ), Qmin = min(occ),
                          wMethods = "invQ", rCutoff = "Leroy", normalised = T,
                          assemblages = occ_t, extended = F, rounding = 3)
 
-## Rarity cut-off point: 0.2900391 / 4.640625 
-## Rarity cut-off point: 0.2047347 / 6.346774 
-## Rarity cut-off point: 0.2122789 / 6.580645 
+#Rarity cut-off point: 0.2895408 / 4.053571 
+#Rarity cut-off point: 0.206302 / 5.982759 
+#Rarity cut-off point: 0.2178254 / 5.663462  
 
 # Calculation of Isr
 Isr_leroy<-Isr(occ_t, rarity.leroy, abundance = FALSE, Wmin = min(rarity.leroy), normalise = TRUE)
@@ -159,29 +186,6 @@ Isr_leroy<-as.data.frame(Isr_leroy)
 Isr_l_sort<-Isr_leroy[order(Isr_leroy$IsrValue,decreasing=TRUE),]
 write.table(Isr_l_sort,file=paste("../Tekstfiler/Isr_wat_",names[[i]],".txt",sep=""))
 }
-```
-
-```{r prepare metadata}
-
-## Replace habitat names in metadata
-meta$habitat<- gsub("EB", "eelgrass", meta$habitat)
-meta$habitat<- gsub("EW", "eelgrass", meta$habitat)
-meta$habitat<- gsub("RB", "rocks", meta$habitat)
-meta$habitat<- gsub("RW", "rocks", meta$habitat)
-meta$habitat<- gsub("SB", "sand", meta$habitat)
-meta$habitat<- gsub("SW", "sand", meta$habitat)
-
-## Add new sample names used in coord
-meta$new_name<-paste(meta$season,"_",meta$cluster,"_",meta$habitat,sep="")
-meta<-within(meta,rm("field_replicate","over_median","root"))
-meta_d <- meta #in meta_d should contain the columns "cluster", "season", "habitat", "substratetype", "sample", and "new_name"
-meta_d<-meta_d %>% distinct() 
-row.names(meta_d)<-meta_d$sample
-meta_d<-within(meta_d,rm("sample"))
-
-#add coordinates
-meta_d$Latitude<-coord$Latitude[match(meta_d$new_name,row.names(coord))] 
-meta_d$Longitude<-coord$Longitude[match(meta_d$new_name,row.names(coord))]
 ```
 
 ```{r load isr}
@@ -197,7 +201,7 @@ wat_sand<-read.table("../Tekstfiler/Isr_wat_sand.txt")
 
 ```{r prepare maps}
 
-isr_tabs<-list(sed_eel,sed_rock,sed_sand,wat_eel,wat_rock,wat_sand)
+isr_tabs<-list(sed_rock,sed_eel,sed_sand,wat_rock,wat_eel,wat_sand)
 
 for (i in 1:length(isr_tabs)){
   
@@ -214,7 +218,7 @@ isr_tabs[[i]]$IsrValue<-round(isr_tabs[[i]]$IsrValue,2)
 }
 ```
 
-```{r sed eel}
+```{r sed rock}
 
 isr_sed<-isr_tabs[[1]]
 
@@ -246,7 +250,7 @@ leafletOutput("map_rar_sed", height = "100%")
 print(map_rar_sed)
 ```
 
-```{r sed rock}
+```{r sed eel}
 
 isr_sed<-isr_tabs[[2]]
 
@@ -310,7 +314,7 @@ leafletOutput("map_rar_sed", height = "100%")
 print(map_rar_sed)
 ```
 
-```{r wat eel}
+```{r wat rock}
 
 isr_wat<-isr_tabs[[4]]
 
@@ -342,7 +346,7 @@ leafletOutput("map_rar_wat", height = "100%")
 print(map_rar_wat)
 ```
 
-```{r wat rock}
+```{r wat eel}
 
 isr_wat<-isr_tabs[[5]]
 
