@@ -9,7 +9,7 @@ library("Hmsc")
 library("dplyr")
 
 #Load rarefied dataset
-COSQ_rare<-readRDS("data/18S_no_c2_3reps_pident90_lulu97.rds")
+COSQ_rare<-readRDS("data/18S_no_c2_3reps.rds")
 
 # Subset to sediment substrate
 COSQ_s<-subset_samples(COSQ_rare, substrate_type=="sediment")
@@ -209,8 +209,10 @@ dataYabund <- dataYabund[, tax_to_keep2]
 #Removing undefined clades
 dataYrich<- dataYrich[, !grepl("NA", names(dataYrich))]
 
-write.table(dare, file = "tmp/Dare_18S_sed_pident90.tsv", sep = "\t", row.names = FALSE)
-write.table(dataYrich, file="tmp/Species_data_18S_sed.tsv", sep= "\t")
+write.table(dare, file = "tmp/18S_sed_env.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/18S_sed_rich.tsv", sep= "\t")
+## Export list of classes
+write.table(names(dataYrich), file="tmp/18S_sed_classes.tsv", sep= "\t")
 
 #Check prevalence and abundance
 P = colMeans(dataYrich>0)

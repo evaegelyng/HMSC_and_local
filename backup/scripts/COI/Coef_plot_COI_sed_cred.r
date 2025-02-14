@@ -4,26 +4,57 @@ library(fields)
 library(Hmsc)
 library(phyloseq)
 
-model<- readRDS("results/Water/COI/COI_wat_241007.rds")
+model<- readRDS("results/sediment/COI/COI_sed_241007.rds")
 
+#YOU NEED TO BE WARY OF THE FOLLOWING:
+#1. The errorbars need to be added in the same order as species plotting order. Otherwise you get the wrong errorbars for each species.
+#2 If you set the coefficient to 0 due to low support level you also need to do it for the error bars.
 
 coef_beta<- function(model){
   
   postBeta = getPostEstimate(model, parName="Beta")
-  
+  rownames(as.data.frame(postBeta))
+
+  #credibility intervals are made directly from the posterior distribution (Beta posterior in this case. The beta is made from the link function of the poisson.)
+  cred_intervals = getPostEstimate(model,q =c(0.025,0.975), parName="Beta")
+
+  #Intervals are nested in the postBeta under q in a 3 dimensional matrix.
+  #if you want to access the intervals of each variable, it is done by entering the variable number in the second dimension, as demonstrated below.
+  #cred_intervals$q[,10,] #Here we get every credible interval for the 10th variable
+
+  # Define the minimum accepted support level for a coefficient
   supportLevel=0.95
   mbeta<- postBeta$mean
   betaP=postBeta$support
   toPlot = mbeta
 
+  # Extract only coefficients with support above 0.95 or below 0.05 (why the latter?)
   toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+
+  # Change from matrix to dataframe
   toPlot=data.frame(toPlot)
+
+  # Put env variables as rownames and as a separate column
   rownames(toPlot)<- colnames(model$XScaled)
-  toPlot$variable<- rownames(toPlot) 
- 
+
+  #add the credibility intervals to the beta dataframe:
+  lower_cred <- cred_intervals$q[1,,]* ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+  upper_cred <- cred_intervals$q[2,,]* ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
   
+  colnames(lower_cred)<- colnames(toPlot)
+  colnames(upper_cred)<- colnames(toPlot)
+  rownames(lower_cred)<- paste(rownames(toPlot),"lower_cred",sep="_")
+  rownames(upper_cred)<- paste(rownames(toPlot),"upper_cred",sep="_")
+  
+
+  toPlot <- rbind(toPlot, lower_cred,upper_cred)
+  toPlot$variable<- rownames(toPlot)
+  length(colnames(model$XScaled))
+
+  # Count number of orders (response variables)
   len<-length(toPlot)-1
   
+  # Change format from list to table
   coef_plot<- toPlot %>% pivot_longer(
     cols=1:len,
     values_to="Betapar",
@@ -31,7 +62,7 @@ coef_beta<- function(model){
     names_repair = "minimal"
   )
   
-  
+  # Change values to numeric format
   coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
  
   return(coef_plot)
@@ -44,7 +75,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
   qual_col_pals = brewer.pal.info[brewer.pal.info$category =="qual",]
   col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
   
-  beta<-beta %>% data.frame() %>% filter(variable==parameter)
+  beta<-beta %>% data.frame() %>% filter(grepl(parameter,variable))
 
   if(!is.null(grouping)){
     for(i in 2:length(colnames(grouping))){
@@ -54,10 +85,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 
       clade=colnames(grouping)[length(colnames(grouping))]
       
-      supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
-                          "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
-
-      beta<- beta[order(factor(beta$supergroup,levels=supergroupOrder),beta$phylum,beta$class),]
+      beta<- beta[order(beta$supergroup,beta$phylum,beta$class),]
       
       beta$order<- factor(beta$order, levels=unique(beta$order))
       
@@ -67,14 +95,24 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
         beta[[clade]]<- factor(beta[[clade]], levels=levels)
       } 
       }
-     beta$Betapar=round(as.numeric(beta$Betapar),6)
+  
+  beta$Betapar=round(as.numeric(beta$Betapar),5)
+
+  #separate the credibility intervals in the original dataframe
+  lower_cred<- beta[grepl("lower_cred",beta$variable),]
+  upper_cred <-beta[grepl("upper_cred",beta$variable),]
+  
+  
+  beta <-  beta[!grepl("lower_cred",beta$variable),]
+  beta <-  beta[!grepl("upper_cred",beta$variable),]
   
   plo<-beta %>% 
     filter(variable != "(Intercept)")%>%
     ggplot(aes(x=order, y=Betapar))+
-    scale_color_manual(values=col_vector[11:23])+
+    geom_point(size=3,alpha=0.9,aes(color=variable))+
+    scale_color_manual(values=c("#B3DE69","#80B1D3"))+
     theme_bw()+
-    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  +
+    #scale_y_continuous(limits=c(min(beta$Betapar),max(beta$Betapar)),labels = scales::label_number(accuracy = 0.001))  + 
     theme(panel.spacing = unit(0, "lines"), 
           strip.background = element_blank(), 
           strip.placement = "outside",
@@ -85,12 +123,14 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
           panel.grid.major.y = element_blank(),
           legend.text = element_text(size=10)) +
     xlab("") +
-    geom_point(size=3,alpha=0.9)+
     # add in a dotted line at zero
     geom_hline(yintercept = 0) +
     labs(
       y ="Estimated effect",
-      title = paste(parameter,title, sep=" "))
+ title =NULL #paste(parameter,title, sep=" ")
+      )+
+    geom_errorbar(aes(ymin =lower_cred$Betapar, ymax = upper_cred$Betapar), width = 0.5, color = "blue")
+
   
 
   if(!is.null(grouping)){
@@ -105,10 +145,14 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 }
 
 
-
 '
 Specify taxonomic reference database:
 '
+
+#COSQ_rare2<-readRDS("data/COI_no_c2_3reps.rds")
+#TAX_S = tax_table(COSQ_rare2)
+#tax <- data.frame(TAX_S,rownames=F)
+#tax<- tax[,c("order","class","phylum","supergroup")]
 
 ## Get curated taxonomy
 tax<-read.table("data/curated_taxonomy.tsv",sep="\t",header=T)
@@ -122,21 +166,22 @@ beta<-coef_beta(model)
 #Check variable names:
 unique(beta$variable)
 
-sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Water",grouping=tax)
-Si<-coef_plot(beta, parameter="Si",title="Water",grouping=tax)
-PO4<-coef_plot(beta, parameter="PO4",title="Water",grouping=tax)
-DN<-coef_plot(beta, parameter="DN",title="Water",grouping=tax)
-Temperature<-coef_plot(beta, parameter="Temperature",title="Water",grouping=tax)
-Chlorophyll<-coef_plot(beta, parameter="Chlorophyll",title="Water",grouping=tax)
-sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Water",grouping=tax)
+# Plot coefficients including credible intervals
+sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Sediment",grouping=tax)
+d14N_15N<-coef_plot(beta, parameter="d14N_15N",title="Sediment",grouping=tax)
+Organic_content<-coef_plot(beta, parameter="Organic_content",title="Sediment",grouping=tax)
+Grain_size<-coef_plot(beta, parameter="Grain_size",title="Sediment",grouping=tax)
+TP<-coef_plot(beta, parameter="TP",title="Sediment",grouping=tax)
+sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Sediment",grouping=tax)
+N<-coef_plot(beta, parameter="N",title="Sediment",grouping=tax)
 
-ggsave("results/Water/COI/COI_coeff_wat_sal1.png", sal1, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_Si.png", Si, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_PO4.png", PO4, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_DN.png", DN, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_temp.png", Temperature, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_chl.png", Chlorophyll, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_sal2.png", sal2, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_sal1.png", sal1, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_d14N_15N.png", d14N_15N, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_Organic.png", Organic_content, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_grain.png", Grain_size, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_TP.png", TP, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_sal2.png", sal2, width=10, height=9)
+ggsave("results/sediment/COI/COI_coeff_sed_N.png", N, width=10, height=9)
 
 '
 The coefficient plot for habitat type
@@ -183,25 +228,14 @@ head(coef_plot)
 
 # Plot for habitat type
 hab<- coef_plot %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
-
-supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
-                    
-                    "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
-
-hab<- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
-
-phylumOrder <- as.vector(hab$phylum)
-phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
-
-hab <- within(hab, phylum <- factor(phylum, levels = phylumOrder))
-
+hab<- hab[order(hab$supergroup,hab$phylum,hab$class,hab$order),]
 
 p<-hab%>% 
   filter(variable != "(Intercept)")%>%
-  ggplot(aes(x=class, y=Betapar, color=variable)) +
-  facet_grid(~phylum + supergroup, 
+  ggplot(aes(x=order, y=Betapar, color=variable)) +
+  facet_grid(~class+phylum+supergroup, 
              scales = "free_x", # Let the x axis vary across facets.
-             space = "free_x",
+             space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
              switch = "x")+
   scale_color_manual(values=c("yellowgreen","cornflowerblue"))+
   theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
@@ -209,6 +243,8 @@ p<-hab%>%
   geom_point(size=3,alpha=0.9)+
   # add in a dotted line at zero
   geom_hline(yintercept = 0) +
-  labs(y ="Estimated effect", title = "")
+  labs(
+    y ="Estimated effect",
+    title = "")
 
-ggsave(p,file="results/Water/COI/coef_wat_hab.png",height=9,width=10)
+ggsave(p,file="results/sediment/COI/coef_sed_hab.png",height=9,width=10)

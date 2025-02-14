@@ -9,7 +9,7 @@ library("Hmsc")
 library("dplyr")
 
 #Load rarefied dataset
-COSQ_rare<-readRDS("data/18S_no_c2_3reps_pident90_lulu97.rds")
+COSQ_rare<-readRDS("data/18S_no_c2_3reps.rds")
 
 # Subset to water substrate
 COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
@@ -153,7 +153,6 @@ Time_d[row.names(Time_d)=="autumn_10_rocks",2]<-131
 Time_d[row.names(Time_d)=="autumn_3_rocks",2]<-145
 Time_d[row.names(Time_d)=="spring_8_rocks",2]<-5
 
-
 #Include only samples with non missing data
 Time_d <- Time_d[good_samples, ]
 Time_d2<-as.matrix(unique(Time_d))
@@ -218,8 +217,10 @@ dataYabund <- dataYabund[, tax_to_keep2]
 #Removing undefined clades
 dataYrich<- dataYrich[, !grepl("NA", names(dataYrich))]
 
-write.table(dare, file = "tmp/Dare_18S_wat_pident90.tsv", sep = "\t", row.names = FALSE)
-write.table(dataYrich, file="tmp/Species_data_18S_wat.tsv", sep= "\t")
+write.table(dare, file = "tmp/18S_wat_env.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/18S_wat_rich.tsv", sep= "\t")
+## Export list of classes
+write.table(names(dataYrich), file="tmp/18S_wat_classes.tsv", sep= "\t")
 
 #Check prevalence and abundance
 P = colMeans(dataYrich>0)

@@ -16,22 +16,26 @@ coef_beta<- function(model){
   betaP=postBeta$support
   toPlot = mbeta
 
+  # Extract only coefficients with support above 0.95 or below 0.05 (why the latter?)
   toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
   toPlot=data.frame(toPlot)
+  
+  # Put env variables as rownames and as a separate column
   rownames(toPlot)<- colnames(model$XScaled)
   toPlot$variable<- rownames(toPlot) 
  
-  
+  # Count number of orders (response variables)
   len<-length(toPlot)-1
   
+  # Change format from list to table
   coef_plot<- toPlot %>% pivot_longer(
-    cols=1:len,
+    cols=1:(all_of(len)),
     values_to="Betapar",
     names_to="order",
     names_repair = "minimal"
   )
   
-  
+  # Change values to numeric format
   coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
  
   return(coef_plot)
@@ -54,7 +58,10 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 
       clade=colnames(grouping)[length(colnames(grouping))]
       
-      beta<- beta[order(beta$kingdom,beta$phylum,beta$class),]
+      supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
+                          "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
+
+      beta<- beta[order(factor(beta$supergroup,levels=supergroupOrder),beta$phylum,beta$class),]
       
       beta$order<- factor(beta$order, levels=unique(beta$order))
       
@@ -92,7 +99,7 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 
   if(!is.null(grouping)){
   plo<- plo+ 
-      facet_grid(~ class+phylum+kingdom, 
+      facet_grid(~ class+phylum+supergroup, 
                  scales = "free_x", # Let the x axis vary across facets.
                  space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
                  switch = "x")}    # }
@@ -107,10 +114,11 @@ coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
 Specify taxonomic reference database:
 '
 
-COSQ_rare2<-readRDS("data/COI_no_c2_3reps.rds")
-TAX_S = tax_table(COSQ_rare2)
-tax <- data.frame(TAX_S,rownames=F)
-tax<- tax[,c("order","class","phylum","kingdom")]
+## Get curated taxonomy
+tax<-read.table("data/curated_taxonomy.tsv",sep="\t",header=T)
+
+## Rename phylum column to match functions above
+names(tax)[names(tax) == "new_phylum"] <- "phylum"
 
 #This function estimates beta coefficients and formats data to plot with ggplot
 beta<-coef_beta(model)
@@ -163,9 +171,9 @@ coef_plot<- toPlot %>% pivot_longer(
 )
 
 coef_plot$phylum<-tax$phylum[match(coef_plot$order,tax$order)] 
-coef_plot$kingdom<-tax$kingdom[match(coef_plot$order,tax$order)] 
+coef_plot$supergroup<-tax$supergroup[match(coef_plot$order,tax$order)] 
 coef_plot$class<-tax$class[match(coef_plot$order,tax$order)] 
-coef_plot<- coef_plot[order(coef_plot$kingdom,coef_plot$phylum,coef_plot$class),]
+coef_plot<- coef_plot[order(coef_plot$supergroup,coef_plot$phylum,coef_plot$class),]
 coef_plot$order<- factor(coef_plot$order, levels=unique(coef_plot$order))
 coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
 
@@ -179,14 +187,25 @@ head(coef_plot)
 
 # Plot for habitat type
 hab<- coef_plot %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
-hab<- hab[order(hab$kingdom,hab$phylum,hab$class,hab$order),]
+
+supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
+                    
+                    "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
+
+hab<- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
+
+phylumOrder <- as.vector(hab$phylum)
+phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
+
+hab <- within(hab, phylum <- factor(phylum, levels = phylumOrder))
+
 
 p<-hab%>% 
   filter(variable != "(Intercept)")%>%
-  ggplot(aes(x=order, y=Betapar, color=variable)) +
-  facet_grid(~class+phylum+kingdom, 
+  ggplot(aes(x=class, y=Betapar, color=variable)) +
+  facet_grid(~phylum + supergroup, 
              scales = "free_x", # Let the x axis vary across facets.
-             space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
+             space = "free_x",
              switch = "x")+
   scale_color_manual(values=c("yellowgreen","cornflowerblue"))+
   theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
@@ -194,8 +213,6 @@ p<-hab%>%
   geom_point(size=3,alpha=0.9)+
   # add in a dotted line at zero
   geom_hline(yintercept = 0) +
-  labs(
-    y ="Estimated effect",
-    title = "")
+  labs(y ="Estimated effect", title = "")
 
 ggsave(p,file="results/sediment/COI/coef_sed_hab.png",height=9,width=10)
