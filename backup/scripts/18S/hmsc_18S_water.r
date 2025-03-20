@@ -1,0 +1,357 @@
+# First, create conda environment with the needed packages:
+# conda create -n hmsc-hpc bioconductor-phyloseq r-dplyr r-devtools
+# Activate environment: 
+# conda activate hmsc-hpc 
+
+# Install Hmsc package from GitHub
+#library(devtools)
+#install_github("hmsc-r/HMSC")
+
+# Load packages
+library("phyloseq")
+library("Hmsc")
+library("dplyr")
+library("ape")
+
+#Load rarefied dataset
+COSQ_rare<-readRDS("data/18S_no_c2_3reps.rds")
+
+# Subset to water substrate
+COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
+
+# Load env data
+pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.names=1)
+#fwat<-read.table("data/wat_metadata.txt", sep="\t", header=T)
+#pc_bs$Chlorophyll<-fwat$Chlorophyll[match(row.names(pc_bs),fwat$shc)]
+
+# Load distance matrix
+distsea<-read.table("data/dist_by_sea.txt", sep="\t", header=T)
+
+# Merge at class level 
+DT1.2<-tax_glom(COSQ_w, taxrank="class")
+
+#creating abundance dataframe from phyloseq object
+dataYabund<-data.frame(otu_table(DT1.2))
+taxa<-data.frame(tax_table(DT1.2))
+colnames(dataYabund)<-taxa$class
+
+# Preparing richness calculations
+otuo<-data.frame(otu_table(COSQ_w))
+taxo<-data.frame(tax_table(COSQ_w), stringsAsFactors=FALSE)
+colnames(otuo)<-taxo$class
+do<-data.frame(sample_data(COSQ_w))
+
+#Categorisation into taxonomic level. Richness is the sum of unique OTU's within each order in a specific sample.
+clades<-levels(factor(taxo$class))
+
+# Prepare for calculating richness of each class in each sample
+otuo2<-t(data.frame(otuo, check.names=F))
+tabr<-cbind(taxo, otuo2)
+# Check tax label columns and remove unnecessary ones
+tabr[1:2,1:7]
+tabr<-within(tabr,rm("phylum"))
+ch<-do$sshc
+z<-expand.grid("sshc"=ch, stringsAsFactors=FALSE)
+
+#Sum columns of all samples within the specified taxonomic level acquiring OTU richness.  
+for(i in 1:length(clades))
+{
+gtr<-subset(tabr, class==clades[i])
+rich<-colSums(gtr[,-1] != 0)
+z<-cbind(z, rich)
+t<-1+i
+colnames(z)[t]<-clades[i]
+}
+
+#This is a new dataframe where we remove the habitat column. 
+rich_asv<-z[,-1]
+dataYrich<-rich_asv
+
+# Calculating relative read abundance
+#Transforms sample counts of a taxa abundance matrix by sum. 
+datarg = transform_sample_counts(DT1.2, function(x) x/sum(x))
+tax<-data.frame(tax_table(datarg), stringsAsFactors=FALSE)
+otu<-otu_table(datarg)
+otu<-t(data.frame(otu,check.names=F))
+tab<-cbind(tax, otu)
+
+#Checking for NA values in the Class column
+tab[tab$class == "NA",]
+#removing any non classified taxa
+tab<- tab[tab$class != "NA",]
+rownames(tab)<-tab$class
+                                 
+# Check tax label columns and remove unnecessary ones
+tab[1:2,1:9]
+tab<-within(tab,rm("phylum"))
+ttab<-t(data.frame(tab, check.names=F))
+class(ttab) <- "numeric"
+
+###################################################
+
+#Make dist data rectangle
+#The distance between each coordinate measured using euclidean distance
+ds<-distsea[with(distsea, order(SiteA, SiteB)), ]
+ds2 <- with(ds, Mads_calc)
+                                 
+#takes all the values of the variables site A and B,  Concatenates them.
+#ss is a vector with all the values in site A and B
+ss <- with(ds, unique(c(as.character(SiteA), as.character(SiteB))))
+
+#This assigns attributes                                
+attributes(ds2) <- with(ds, list(Size = length(ss),
+                                  Labels = ss,
+                                  Diag = FALSE,
+                                  Upper = FALSE,
+                                  method = "user"))
+class(ds2) <- "dist"
+
+#Format date as days from first sampling day
+dsds<-sort(as.Date(pc_bs$Time, format="%d-%m-%y"))
+
+pc_bs$Time_d<-as.integer(abs(as.Date(pc_bs$Time, format="%d-%m-%y")-dsds[1]))
+
+#Prepare environment data
+#For HMSC it is required that categorical variables are factors.
+pc_bs$season <- factor(pc_bs$season, levels = c("spring","autumn"))
+pc_bs$habitat <- factor(pc_bs$habitat, levels = c("sand","rocks","eelgrass"))
+pc_bs$sc<-paste(pc_bs$season, pc_bs$cluster, sep="_")
+pc_bs$sch<-rownames(pc_bs)
+pc_bs$sshc<-paste("water",pc_bs$season,pc_bs$habitat, pc_bs$cluster, sep="_")
+
+#Add temperature missing data
+#
+#Missing data - temperature data imputed from average of adjacent sites
+tempdata<-subset(pc_bs, season=="spring"&(cluster==11|cluster==14))
+
+pc_bs["spring_12_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
+pc_bs["spring_12_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
+pc_bs["spring_13_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
+pc_bs["spring_13_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
+
+head(pc_bs)
+#What variables should be kept?
+pc_bs2<-pc_bs[,c("Salinity","log_Si","log_PO4","log_DN","Temperature","habitat","season","sshc","log_Chlorophyll")]
+
+# Identify samples with complete metadata
+print("Total number of samples")
+nrow(pc_bs2)
+good_samples<-rownames(pc_bs2)[rowSums(is.na(pc_bs2)) == 0]
+print("Number of samples with complete metadata")
+length(good_samples)
+pc_bs3<-pc_bs2
+rownames(pc_bs3)<-pc_bs3$sshc
+good_samples_sp<-rownames(pc_bs3)[rowSums(is.na(pc_bs3)) == 0]
+
+# Subset data to samples with complete metadata
+dataYrich <- dataYrich[rownames(dataYrich) %in% good_samples_sp, ]
+dataYabund <- dataYabund[rownames(dataYabund) %in% good_samples_sp, ]
+
+pc_bs2<-na.omit(pc_bs2)
+
+pc_bs2$sch<-rownames(pc_bs2)
+Time_d<-data.frame(pc_bs[,c("season","Time_d")])
+Time_d$season<-as.numeric(Time_d$season)
+
+##Forcing change in time in order to make unique season_date combinations per cluster
+Time_d[row.names(Time_d)=="autumn_10_rocks",2]<-131
+Time_d[row.names(Time_d)=="autumn_3_rocks",2]<-145
+Time_d[row.names(Time_d)=="spring_8_rocks",2]<-5
+
+#Include only samples with non missing data
+Time_d <- Time_d[good_samples, ]
+Time_d2<-as.matrix(unique(Time_d))
+btr<-pc_bs
+btr<-btr[good_samples, ]
+
+#Making Time data rownames match the rest of the data.
+rownames(Time_d2)<-unique(btr$sc)
+
+######    Preparing alternative environment data for analysis with substrate type. Popping everything into one data frame
+dare<-data.frame(sample_data(DT1.2))
+dare <- dare[rownames(dare) %in% good_samples_sp, ]
+dare$sch<-paste(dare$season,dare$cluster, dare$habitat, sep="_")
+dare$sc<-paste(dare$season,dare$cluster, sep="_")
+dare$habitat <- factor(dare$habitat, levels = c("sand","rocks","eelgrass"))
+dare$cluster<-as.factor(dare$cluster)
+dare$season<-as.factor(dare$season)
+dare$sch<-as.factor(dare$sch)
+dare$sshc<-as.factor(dare$sshc)
+dare$sc<-as.factor(dare$sc)
+dare$Salinity<-pc_bs2$Salinity[match(dare$sch, pc_bs2$sch)]
+dare$log_Si<-pc_bs2$log_Si[match(dare$sch, pc_bs2$sch)]
+dare$log_PO4<-pc_bs2$log_PO4[match(dare$sch, pc_bs2$sch)]
+dare$log_DN<-pc_bs2$log_DN[match(dare$sch, pc_bs2$sch)]
+dare$Temperature<-pc_bs2$Temperature[match(dare$sch, pc_bs2$sch)]
+dare$log_Chlorophyll<- pc_bs2$log_Chlorophyll[match(dare$sch, pc_bs2$sch)]
+
+#Variables to include in the final dataframe
+dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","log_Si","log_PO4","log_DN","Temperature","log_Chlorophyll")]
+
+#Removing undefined clades
+dataYrich<- dataYrich[, !grepl("NA", names(dataYrich))]
+
+write.table(dare, file = "tmp/18S_wat_env.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/18S_wat_rich.tsv", sep= "\t")
+## Export list of classes
+write.table(names(dataYrich), file="tmp/18S_wat_classes.tsv", sep= "\t")
+
+#Check prevalence and abundance
+P = colMeans(dataYrich>0)
+A = colSums(dataYrich)
+
+###############################
+#HMSC study design. 
+#Study design needs to include comparable columns to the randomeffectlevel and predictor dataframe(dare).
+#See it as intermediate dataframe between the randomeffect levels and the rest of the data.
+studyDesign = data.frame(
+    season = as.factor(dare$season),
+    sch = as.factor(dare$sch),
+    habitat = as.factor(dare$habitat),
+    cluster = as.factor(dare$cluster),
+    Time_d = as.factor(dare$sc),
+    space = as.factor(dare$cluster),
+    sshc = as.factor(dare$sshc)
+)
+
+#Create random effects structure
+rl1 = HmscRandomLevel(sData = Time_d2)
+rl2 = HmscRandomLevel(distMat = ds2)
+
+#Setting priors to a default 5. 
+rl1 = setPriors(rl1,nfMax=5)
+rl2 = setPriors(rl2,nfMax=5)
+
+rnd_ef<-list("Time_d"=rl1,"space"=rl2)
+
+# Add taxonomic tree
+
+## Load table with corrected phylum names and marine/non-marine
+tax_cur<-read.table("data/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
+
+## Add curated phylum names
+taxa$new_phylum<-tax_cur$new_phylum[match(taxa$class,tax_cur$class)]
+
+# Load table with supergroups and uni-/multicellular
+sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
+
+## Add supergroup
+taxa$supergroup<-sgroups$supergroup[match(taxa$new_phylum,sgroups$new_phylum)]
+
+## Define taxonomic hierarchy
+frm <- ~supergroup/new_phylum/class
+taxa$supergroup <- as.factor(taxa$supergroup)
+taxa$new_phylum <- as.factor(taxa$new_phylum)
+taxa$class <- as.factor(taxa$class)
+tr <- as.phylo(frm, data = taxa, collapse=FALSE)
+tr$edge.length <- rep(1, nrow(tr$edge))
+#plot(tr, show.node.label=TRUE)
+Nnode(tr)
+
+## Create a presence/absence matrix of classes
+dataYrich = as.matrix(dataYrich)
+dataYrich.pa = 1*(dataYrich>0)
+head(dataYrich.pa)
+
+## Create a richness matrix dependent on presence
+dataYrich.p = dataYrich
+dataYrich.p[dataYrich==0] = NA
+
+# Check for skewness of data
+jpeg("results/Water/18S/hist_18S_wat.jpg", width = 350, height = "350")
+hist(dataYrich.p)
+dev.off()
+
+# Log-transform richness data
+dataYrich.p = log(dataYrich.p)
+
+# Check for skewness of data
+jpeg("results/Water/18S/hist_18S_wat_log.jpg", width = 350, height = "350")
+hist(dataYrich.p)
+dev.off()
+
+Y = cbind(dataYrich.pa,dataYrich.p)
+sps = colnames(dataYrich.pa)
+ns = length(sps)
+sps.subset = colnames(dataYrich.p)
+ns.subset = length(sps.subset)
+colnames(Y) = c(paste0(sps,"_DNA.PA"),paste0(sps.subset,"_DNA.ABUC"))
+head(Y)
+
+#Create formula
+XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + log_Si + log_PO4 + log_DN + Temperature + habitat + log_Chlorophyll
+
+#Set models; abund or rich, evaluate different distributions
+#Lognormal poisson allows more flexible poisson modelling that doesnt need standard deviation being equal to the mean.
+m.full.r.lp = Hmsc(Y=Y, phyloTree = tr, XData=dare, XFormula=XFormula,
+studyDesign=studyDesign, ranLevels=rnd_ef, distr="lognormal poisson")
+
+#Run
+nChains = 2
+nParallel = nChains
+thin = 40
+samples = 6000
+transient = 0.2*thin*samples
+verbose = samples/10
+
+
+models = sampleMcmc(m.full.r.lp, thin = thin,
+samples = samples, transient = transient,
+nChains = nChains, nParallel = nParallel, verbose = verbose)
+
+#Saving model
+saveRDS(models, file = "results/Water/18S/18S_wat_241007.rds")
+
+#Diagnostic
+modelsII<-models
+
+#Widely Applicable information Criteria
+WAIC2 = computeWAIC(hM=modelsII, byColumn=FALSE)
+preds = computePredictedValues(modelsII)
+
+#To get the sr2 the predicted values are used to estimates amount of explained variance.
+MF= evaluateModelFit(hM = modelsII, predY = preds)
+
+#Converting model object to r interpretable coda
+mpost = convertToCodaObject(modelsII, spNamesNumbers = c(T,F), covNamesNumbers = c(T,F))
+ess.beta = effectiveSize(mpost$Beta)
+gd<-gelman.diag(mpost$Beta, multivariate=T)
+
+print("WAIC2")
+WAIC2
+
+#Explanatory power
+#For Poisson models, a pseudo-R2 is computed as squared spearman correlation between observed and
+# predicted values, times the sign of the correlation (SR2).
+print("Mean of SR2")
+mean(MF$SR2)
+print("Std dev of SR2")
+sd(MF$SR2)
+
+#Predictive power
+print("Mean of ESS")
+mean(ess.beta)
+
+print("Std dev of ESS")
+sd(ess.beta)
+
+#Potential scale reduction factor gives an estimate of model parameter convergence. This number should be <1.1
+print("Mean of PSRF")
+mean(gd$psrf)
+
+print("Std dev of PSRF")
+sd(gd$psrf)
+
+#Histogram of effective sample size
+pdf("results/Water/18S/diag_241007.pdf")
+par(mfrow=c(1,2))
+hist(effectiveSize(mpost$Beta), main="ess(beta)")
+hist(gelman.diag(mpost$Beta, multivariate=F)$psrf, main="psrf(beta)")
+dev.off()
+
+#Posterior beta estimation over different iterations gives an idea of parameter convergence for each parameter.
+pdf("results/Water/18S/diag_beta_241007.pdf")
+plot(mpost$Beta)
+dev.off()
+
+head(modelsII$X)
