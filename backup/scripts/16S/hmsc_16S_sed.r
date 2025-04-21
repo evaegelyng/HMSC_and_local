@@ -19,10 +19,10 @@ library("ape")
 library("jsonify")
 
 #Load rarefied dataset
-COSQ_rare<-readRDS("data/18S_no_c2_3reps.rds")
+COSQ_rare<-readRDS("data/16S_no_c2_3reps.rds")
 
-# Subset to water substrate
-COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
+# Subset to sediment substrate
+COSQ_s<-subset_samples(COSQ_rare, substrate_type=="sediment")
 
 # Load env data
 pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.names=1)
@@ -31,33 +31,33 @@ pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.nam
 distsea<-read.table("data/dist_by_sea.txt", sep="\t", header=T)
 
 # Merge at class level 
-DT1.2<-tax_glom(COSQ_w, taxrank="class")
+DT1.2<-tax_glom(COSQ_s, taxrank="Class")
 
 # Extracting taxonomy table from phyloseq object
 taxa<-data.frame(tax_table(DT1.2))
 
 # Preparing richness calculations
-otuo<-data.frame(otu_table(COSQ_w))
-taxo<-data.frame(tax_table(COSQ_w), stringsAsFactors=FALSE)
-colnames(otuo)<-taxo$class
-do<-data.frame(sample_data(COSQ_w))
+otuo<-data.frame(otu_table(COSQ_s))
+taxo<-data.frame(tax_table(COSQ_s), stringsAsFactors=FALSE)
+colnames(otuo)<-taxo$Class
+do<-data.frame(sample_data(COSQ_s))
 
 #Categorisation into taxonomic level. Richness is the sum of unique OTU's within each class in a specific sample.
-clades<-levels(factor(taxo$class))
+clades<-levels(factor(taxo$Class))
 
 # Prepare for calculating richness of each class in each sample
 otuo2<-t(data.frame(otuo, check.names=F))
 tabr<-cbind(taxo, otuo2)
 # Check tax label columns and remove unnecessary ones
 tabr[1:2,1:7]
-tabr<-within(tabr,rm("phylum"))
+tabr<-within(tabr,rm("Kingdom","Phylum","Order","Family","Genus"))
 ch<-do$sshc
 z<-expand.grid("sshc"=ch, stringsAsFactors=FALSE)
 
 #Sum columns of all samples within the specified taxonomic level acquiring OTU richness.  
 for(i in 1:length(clades))
 {
-gtr<-subset(tabr, class==clades[i])
+gtr<-subset(tabr, Class==clades[i])
 rich<-colSums(gtr[,-1] != 0)
 z<-cbind(z, rich)
 t<-1+i
@@ -96,20 +96,11 @@ pc_bs$season <- factor(pc_bs$season, levels = c("spring","autumn"))
 pc_bs$habitat <- factor(pc_bs$habitat, levels = c("sand","rocks","eelgrass"))
 pc_bs$sc<-paste(pc_bs$season, pc_bs$cluster, sep="_")
 pc_bs$sch<-rownames(pc_bs)
-pc_bs$sshc<-paste("water",pc_bs$season,pc_bs$habitat, pc_bs$cluster, sep="_")
-
-#Add missing data for temperature
-#Missing data - temperature data imputed from average of adjacent sites
-tempdata<-subset(pc_bs, season=="spring"&(cluster==11|cluster==14))
-
-pc_bs["spring_12_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
-pc_bs["spring_12_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
-pc_bs["spring_13_rocks","Temperature"]<-mean(tempdata[1:2,"Temperature"])
-pc_bs["spring_13_sand","Temperature"]<-mean(tempdata[3:4,"Temperature"])
+pc_bs$sshc<-paste("sediment",pc_bs$season,pc_bs$habitat, pc_bs$cluster, sep="_")
 
 head(pc_bs)
 #What variables should be kept?
-pc_bs2<-pc_bs[,c("Salinity","log_Si","log_PO4","log_DN","Temperature","habitat","season","sshc","log_Chlorophyll")]
+pc_bs2<-pc_bs[,c("Salinity","cube_d14N_15N","log_Organic_content","habitat","season","sshc","Grain_size","log_TP","log_N")]
 
 # Identify samples with complete metadata
 print("Total number of samples")
@@ -156,21 +147,21 @@ dare$sch<-as.factor(dare$sch)
 dare$sshc<-as.factor(dare$sshc)
 dare$sc<-as.factor(dare$sc)
 dare$Salinity<-pc_bs2$Salinity[match(dare$sch, pc_bs2$sch)]
-dare$log_Si<-pc_bs2$log_Si[match(dare$sch, pc_bs2$sch)]
-dare$log_PO4<-pc_bs2$log_PO4[match(dare$sch, pc_bs2$sch)]
-dare$log_DN<-pc_bs2$log_DN[match(dare$sch, pc_bs2$sch)]
-dare$Temperature<-pc_bs2$Temperature[match(dare$sch, pc_bs2$sch)]
-dare$log_Chlorophyll<- pc_bs2$log_Chlorophyll[match(dare$sch, pc_bs2$sch)]
+dare$cube_d14N_15N<-pc_bs2$cube_d14N_15N[match(dare$sch, pc_bs2$sch)]
+dare$log_Organic_content<-pc_bs2$log_Organic_content[match(dare$sch, pc_bs2$sch)]
+dare$Grain_size<- pc_bs2$Grain_size[match(dare$sch, pc_bs2$sch)]
+dare$log_TP<- pc_bs2$log_TP[match(dare$sch, pc_bs2$sch)]
+dare$log_N<-pc_bs2$log_N[match(dare$sch, pc_bs2$sch)]
 
 #Variables to include in the final dataframe
-dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","log_Si","log_PO4","log_DN","Temperature","log_Chlorophyll")]
+dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","cube_d14N_15N","log_Organic_content","Grain_size","log_TP","log_N")]
 
 #Check for "NA"s in class names
 dataYrich[, grepl("NA", names(dataYrich))]
 # No NAs in class names
 
-write.table(dare, file = "tmp/18S_wat_env.tsv", sep = "\t", row.names = FALSE)
-write.table(dataYrich, file="tmp/18S_wat_rich.tsv", sep= "\t")
+write.table(dare, file = "tmp/16S_sed_env.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/16S_sed_rich.tsv", sep= "\t")
 
 #Check richness values
 A = colSums(dataYrich)
@@ -208,7 +199,7 @@ dataYrich.p = dataYrich
 dataYrich.p[dataYrich.p==0] = NA
 
 # Check for skewness of data
-jpeg("results/Water/18S/hist_18S_wat.jpg", width = 350, height = "350")
+jpeg("results/sediment/16S/hist_16S_sed.jpg", width = 350, height = "350")
 hist(dataYrich.p)
 dev.off()
 
@@ -216,7 +207,7 @@ dev.off()
 dataYrich.p = log(dataYrich.p)
 
 # Check for skewness of data
-jpeg("results/Water/18S/hist_18S_wat_log.jpg", width = 350, height = "350")
+jpeg("results/sediment/16S/hist_16S_sed_log.jpg", width = 350, height = "350")
 hist(dataYrich.p)
 dev.off()
 
@@ -231,12 +222,12 @@ head(Y)
 
 # Add taxonomic tree
 ## Load table with corrected phylum names and marine/non-marine
-tax_cur<-read.table("data/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
+tax_cur<-read.table("data/16S_classified_phy_class_curated.tsv",sep="\t",header=T)
 ## Add curated phylum names
 taxonomy <- as.data.frame(colnames(Y))
 names(taxonomy) <- "Y_names"
 taxonomy$class <- sub("_[^_]+$", "", taxonomy$Y_names)
-taxonomy$new_phylum<-tax_cur$new_phylum[match(taxonomy$class,tax_cur$class)]
+taxonomy$new_phylum<-tax_cur$new_phylum[match(taxonomy$class,tax_cur$Class)]
 
 # Load table with supergroups and uni-/multicellular
 sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
@@ -259,7 +250,7 @@ rownames(TrData) = colnames(Y)
 head(TrData)
 
 #Create formulas
-XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + log_Si + log_PO4 + log_DN + Temperature + habitat + log_Chlorophyll
+XFormula = ~ poly(Salinity, degree = 2, raw = TRUE) + cube_d14N_15N + log_N + log_Organic_content + habitat + Grain_size + log_TP
 
 TrFormula = ~ datatype
 
@@ -270,13 +261,13 @@ my.distr = c(rep("probit",ns),rep("lognormal poisson",ns.subset))
 #Lognormal poisson allows more flexible poisson modelling that doesnt need standard deviation being equal to the mean.
 m = Hmsc(Y=Y, phyloTree = tr, XData=dare, XFormula=XFormula, 
 TrData = TrData, TrFormula = TrFormula,
-studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
+#studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
+studyDesign=studyDesign, ranLevels=list("Time_d"=rl1), distr=my.distr)
 
 # SAVING MODEL
 models = list(m)
-names(models) = c("Water 18S")
-save(models, file = "results/Water/18S/unfitted_models.RData") # doesnt work!
-saveRDS(models, file = "results/Water/18S/unfitted_models.rds") # doesnt work!
+names(models) = c("Sediment 16S")
+save(models, file = "results/sediment/16S/unfitted_models.RData")
 
 # TESTING THAT MODELS FIT WITHOUT ERRORS
 for(i in 1:length(models)){
@@ -286,19 +277,29 @@ for(i in 1:length(models)){
 
 #Run
 nSamples = 250
-thin = 1000
+thin = 100
 nChains = 4
 verbose = 100
-transient = nSamples*thin
+transient = ceiling(0.5*nSamples*thin)
 
 # export the model object, using the setting ´engine="HPC"´, which denotes that we are not interested in sampling the model, but only to initialize the sampling.
-init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
-                                            transient=transient, nChains=nChains,
-                                            verbose=verbose, engine="HPC")
+#init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
+#                                            transient=transient, nChains=nChains,
+#                                            verbose=verbose, engine="HPC")
 
-init_file_path = "results/Water/18S/init_file.rds"
-saveRDS(to_json(init_obj), file=init_file_path)
+#init_file_path = "results/sediment/16S/init_file.rds"
+#saveRDS(to_json(init_obj), file=init_file_path)
+#saveRDS(init_obj, file="results/sediment/16S/init_file_R_format.rds")
+
+nParallel = nChains
+
+model_fit = sampleMcmc(m, thin = thin,
+samples = nSamples, transient = transient,
+nChains = nChains, nParallel = nParallel, verbose = verbose)
+
+#Saving model
+saveRDS(model_fit, file = "results/sediment/16S/16S_sed_250416.rds")
 
 # Now run from terminal:
 # conda activate hmsc-hpc
-# sbatch scripts/hmsc_18S_water_cpu.sh
+# sbatch scripts/hmsc_16S_sed.sh
