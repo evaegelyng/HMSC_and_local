@@ -19,7 +19,7 @@ library("ape")
 library("jsonify")
 
 #Load rarefied dataset
-COSQ_rare<-readRDS("data/18S_no_c2_3reps.rds")
+COSQ_rare<-readRDS("data/16S_no_c2_3reps.rds")
 
 # Subset to water substrate
 COSQ_w<-subset_samples(COSQ_rare, substrate_type=="water")
@@ -31,7 +31,7 @@ pc_bs<-read.table("data/merged_metadata_230427.txt", sep="\t", header=T, row.nam
 distsea<-read.table("data/dist_by_sea.txt", sep="\t", header=T)
 
 # Merge at class level 
-DT1.2<-tax_glom(COSQ_w, taxrank="class")
+DT1.2<-tax_glom(COSQ_w, taxrank="Class")
 
 # Extracting taxonomy table from phyloseq object
 taxa<-data.frame(tax_table(DT1.2))
@@ -39,25 +39,25 @@ taxa<-data.frame(tax_table(DT1.2))
 # Preparing richness calculations
 otuo<-data.frame(otu_table(COSQ_w))
 taxo<-data.frame(tax_table(COSQ_w), stringsAsFactors=FALSE)
-colnames(otuo)<-taxo$class
+colnames(otuo)<-taxo$Class
 do<-data.frame(sample_data(COSQ_w))
 
 #Categorisation into taxonomic level. Richness is the sum of unique OTU's within each class in a specific sample.
-clades<-levels(factor(taxo$class))
+clades<-levels(factor(taxo$Class))
 
 # Prepare for calculating richness of each class in each sample
 otuo2<-t(data.frame(otuo, check.names=F))
 tabr<-cbind(taxo, otuo2)
 # Check tax label columns and remove unnecessary ones
 tabr[1:2,1:7]
-tabr<-within(tabr,rm("phylum"))
+tabr<-within(tabr,rm("Kingdom","Phylum","Order","Family","Genus"))
 ch<-do$sshc
 z<-expand.grid("sshc"=ch, stringsAsFactors=FALSE)
 
 #Sum columns of all samples within the specified taxonomic level acquiring OTU richness.  
 for(i in 1:length(clades))
 {
-gtr<-subset(tabr, class==clades[i])
+gtr<-subset(tabr, Class==clades[i])
 rich<-colSums(gtr[,-1] != 0)
 z<-cbind(z, rich)
 t<-1+i
@@ -169,8 +169,8 @@ dare<-dare[,c("sch","cluster","season","sc","sshc","habitat","Salinity","log_Si"
 dataYrich[, grepl("NA", names(dataYrich))]
 # No NAs in class names
 
-write.table(dare, file = "tmp/18S_wat_env.tsv", sep = "\t", row.names = FALSE)
-write.table(dataYrich, file="tmp/18S_wat_rich.tsv", sep= "\t")
+write.table(dare, file = "tmp/16S_wat_env.tsv", sep = "\t", row.names = FALSE)
+write.table(dataYrich, file="tmp/16S_wat_rich.tsv", sep= "\t")
 
 #Check richness values
 A = colSums(dataYrich)
@@ -208,7 +208,7 @@ dataYrich.p = dataYrich
 dataYrich.p[dataYrich.p==0] = NA
 
 # Check for skewness of data
-jpeg("results/Water/18S/hist_18S_wat.jpg", width = 350, height = "350")
+jpeg("results/Water/16S/hist_16S_wat.jpg", width = 350, height = "350")
 hist(dataYrich.p)
 dev.off()
 
@@ -216,7 +216,7 @@ dev.off()
 dataYrich.p = log(dataYrich.p)
 
 # Check for skewness of data
-jpeg("results/Water/18S/hist_18S_wat_log.jpg", width = 350, height = "350")
+jpeg("results/Water/16S/hist_16S_wat_log.jpg", width = 350, height = "350")
 hist(dataYrich.p)
 dev.off()
 
@@ -230,24 +230,18 @@ colnames(Y) <- noquote(colnames(Y))
 head(Y)
 
 # Add taxonomic tree
-## Load table with corrected phylum names and marine/non-marine
-tax_cur<-read.table("data/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
-## Add curated phylum names
+
 taxonomy <- as.data.frame(colnames(Y))
 names(taxonomy) <- "Y_names"
 taxonomy$class <- sub("_[^_]+$", "", taxonomy$Y_names)
-taxonomy$new_phylum<-tax_cur$new_phylum[match(taxonomy$class,tax_cur$class)]
-
-# Load table with supergroups and uni-/multicellular
-sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
-## Add supergroup
-taxonomy$supergroup<-sgroups$supergroup[match(taxonomy$new_phylum,sgroups$new_phylum)]
+taxonomy$kingdom<-taxa$Kingdom[match(taxonomy$class,taxa$Class)]
+taxonomy$phylum<-taxa$Phylum[match(taxonomy$class,taxa$Class)]
+taxonomy$kingdom <- as.factor(taxonomy$kingdom)
+taxonomy$phylum <- as.factor(taxonomy$phylum)
+taxonomy$Y_names <- as.factor(taxonomy$Y_names)
 
 ## Define taxonomic hierarchy
-frm <- ~supergroup/new_phylum/Y_names
-taxonomy$supergroup <- as.factor(taxonomy$supergroup)
-taxonomy$new_phylum <- as.factor(taxonomy$new_phylum)
-taxonomy$Y_names <- as.factor(taxonomy$Y_names)
+frm <- ~kingdom/phylum/Y_names
 tr <- as.phylo(frm, data = taxonomy, collapse=FALSE)
 tr$edge.length <- rep(1, nrow(tr$edge))
 #plot(tr, show.node.label=TRUE)
@@ -274,8 +268,8 @@ studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.dist
 
 # SAVING MODEL
 models = list(m)
-names(models) = c("Water 18S")
-save(models, file = "results/Water/18S/unfitted_models.RData") 
+names(models) = c("Water 16S")
+save(models, file = "results/Water/16S/unfitted_models.RData") 
 
 # TESTING THAT MODELS FIT WITHOUT ERRORS
 for(i in 1:length(models)){
@@ -295,9 +289,9 @@ init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
                                             transient=transient, nChains=nChains,
                                             verbose=verbose, engine="HPC")
 
-init_file_path = "results/Water/18S/init_file.rds"
+init_file_path = "results/Water/16S/init_file.rds"
 saveRDS(to_json(init_obj), file=init_file_path)
 
 # Now run from terminal:
 # conda activate hmsc-hpc
-# sbatch scripts/18S/hmsc_18S_water.sh
+# sbatch scripts/16S/hmsc_16S_water.sh

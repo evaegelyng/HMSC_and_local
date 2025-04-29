@@ -221,24 +221,18 @@ colnames(Y) <- noquote(colnames(Y))
 head(Y)
 
 # Add taxonomic tree
-## Load table with corrected phylum names and marine/non-marine
-tax_cur<-read.table("data/16S_classified_phy_class_curated.tsv",sep="\t",header=T)
-## Add curated phylum names
+
 taxonomy <- as.data.frame(colnames(Y))
 names(taxonomy) <- "Y_names"
 taxonomy$class <- sub("_[^_]+$", "", taxonomy$Y_names)
-taxonomy$new_phylum<-tax_cur$new_phylum[match(taxonomy$class,tax_cur$Class)]
-
-# Load table with supergroups and uni-/multicellular
-sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
-## Add supergroup
-taxonomy$supergroup<-sgroups$supergroup[match(taxonomy$new_phylum,sgroups$new_phylum)]
+taxonomy$kingdom<-taxa$Kingdom[match(taxonomy$class,taxa$Class)]
+taxonomy$phylum<-taxa$Phylum[match(taxonomy$class,taxa$Class)]
+taxonomy$kingdom <- as.factor(taxonomy$kingdom)
+taxonomy$phylum <- as.factor(taxonomy$phylum)
+taxonomy$Y_names <- as.factor(taxonomy$Y_names)
 
 ## Define taxonomic hierarchy
-frm <- ~supergroup/new_phylum/Y_names
-taxonomy$supergroup <- as.factor(taxonomy$supergroup)
-taxonomy$new_phylum <- as.factor(taxonomy$new_phylum)
-taxonomy$Y_names <- as.factor(taxonomy$Y_names)
+frm <- ~kingdom/phylum/Y_names
 tr <- as.phylo(frm, data = taxonomy, collapse=FALSE)
 tr$edge.length <- rep(1, nrow(tr$edge))
 #plot(tr, show.node.label=TRUE)
@@ -261,13 +255,12 @@ my.distr = c(rep("probit",ns),rep("lognormal poisson",ns.subset))
 #Lognormal poisson allows more flexible poisson modelling that doesnt need standard deviation being equal to the mean.
 m = Hmsc(Y=Y, phyloTree = tr, XData=dare, XFormula=XFormula, 
 TrData = TrData, TrFormula = TrFormula,
-#studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
-studyDesign=studyDesign, ranLevels=list("Time_d"=rl1), distr=my.distr)
+studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
 
 # SAVING MODEL
 models = list(m)
 names(models) = c("Sediment 16S")
-save(models, file = "results/sediment/16S/unfitted_models.RData")
+save(models, file = "results/sediment/16S/unfitted_models.RData") 
 
 # TESTING THAT MODELS FIT WITHOUT ERRORS
 for(i in 1:length(models)){
@@ -277,29 +270,19 @@ for(i in 1:length(models)){
 
 #Run
 nSamples = 250
-thin = 100
+thin = 1000
 nChains = 4
 verbose = 100
-transient = ceiling(0.5*nSamples*thin)
+transient = nSamples*thin
 
 # export the model object, using the setting ´engine="HPC"´, which denotes that we are not interested in sampling the model, but only to initialize the sampling.
-#init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
-#                                            transient=transient, nChains=nChains,
-#                                            verbose=verbose, engine="HPC")
+init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
+                                            transient=transient, nChains=nChains,
+                                            verbose=verbose, engine="HPC")
 
-#init_file_path = "results/sediment/16S/init_file.rds"
-#saveRDS(to_json(init_obj), file=init_file_path)
-#saveRDS(init_obj, file="results/sediment/16S/init_file_R_format.rds")
-
-nParallel = nChains
-
-model_fit = sampleMcmc(m, thin = thin,
-samples = nSamples, transient = transient,
-nChains = nChains, nParallel = nParallel, verbose = verbose)
-
-#Saving model
-saveRDS(model_fit, file = "results/sediment/16S/16S_sed_250416.rds")
+init_file_path = "results/sediment/16S/init_file.rds"
+saveRDS(to_json(init_obj), file=init_file_path)
 
 # Now run from terminal:
 # conda activate hmsc-hpc
-# sbatch scripts/hmsc_16S_sed.sh
+# sbatch scripts/16S/hmsc_16S_sed.sh

@@ -261,8 +261,7 @@ my.distr = c(rep("probit",ns),rep("lognormal poisson",ns.subset))
 #Lognormal poisson allows more flexible poisson modelling that doesnt need standard deviation being equal to the mean.
 m = Hmsc(Y=Y, phyloTree = tr, XData=dare, XFormula=XFormula, 
 TrData = TrData, TrFormula = TrFormula,
-#studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
-studyDesign=studyDesign, ranLevels=list("Time_d"=rl1), distr=my.distr)
+studyDesign=studyDesign, ranLevels=list("Time_d"=rl1,"space"=rl2), distr=my.distr)
 
 # SAVING MODEL
 models = list(m)
@@ -280,7 +279,7 @@ nSamples = 250
 thin = 100
 nChains = 4
 verbose = 100
-transient = ceiling(0.5*nSamples*thin)
+transient = nSamples*thin
 
 # export the model object, using the setting ´engine="HPC"´, which denotes that we are not interested in sampling the model, but only to initialize the sampling.
 init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
@@ -292,4 +291,4 @@ saveRDS(to_json(init_obj), file=init_file_path)
 
 # Now run from terminal:
 # conda activate hmsc-hpc
-# sbatch scripts/hmsc_18S_sed.sh
+# sbatch scripts/18S/hmsc_18S_sed.sh
