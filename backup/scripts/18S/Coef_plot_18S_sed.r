@@ -34,8 +34,6 @@ taxonomy$supergroup <- sgroups$supergroup[match(taxonomy$new_phylum,sgroups$new_
 ## Rename phylum column to match functions above
 names(taxonomy)[3] <- "phylum"
 
-unique(beta$variable)
-
 ################################################################################
 ##  The coefficient plot for habitat types   ###################################
 ################################################################################
@@ -86,7 +84,6 @@ coef_plot$class<- factor(coef_plot$class, levels=unique(coef_plot$class))
 coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
 
 require(RColorBrewer)
-#n <- 9
 qual_col_pals = brewer.pal.info[brewer.pal.info$category =="qual",]
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
 
@@ -142,7 +139,7 @@ p <- hab%>%
 ggsave(p,file="results/sediment/18S/18S_coef_sed_hab.png",height=9,width=15)
 
 
-# Extract presence only (abundance) data
+# Extract presence only (richness) data
 coef_plot_p <- coef_plot[!grepl(".PA", coef_plot$class), ]
 
 # Remove ".P" from class names
@@ -150,10 +147,6 @@ coef_plot_p$class <- sub("_[^_]+$", "", coef_plot_p$class)
 
 # Plot for habitat type
 hab<- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
-
-supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
-                    
-                    "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
 
 hab <- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
 
@@ -189,4 +182,43 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/18S/18S_coef_sed_hab_abun.png",height=9,width=15)
+ggsave(p,file="results/sediment/18S/18S_coef_sed_hab_rich.png",height=9,width=15)
+
+# Plot for salinity
+sal <- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"poly",negate=F))
+
+sal <- sal[order(factor(sal$supergroup,levels=supergroupOrder),sal$phylum,sal$class),]
+
+phylumOrder <- as.vector(sal$phylum)
+phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
+
+sal <- within(sal, phylum <- factor(phylum, levels = phylumOrder))
+
+#Take credibility intervals out of "hab" object
+lower_cred<- sal[grepl("lower_cred",sal$variable),]
+upper_cred <-sal[grepl("upper_cred",sal$variable),]
+
+#leave only coeficients in "hab" object
+sal <-  sal[!grepl("lower_cred",sal$variable),]
+sal <-  sal[!grepl("upper_cred",sal$variable),]
+
+
+p <- sal%>% 
+  filter(variable != "(Intercept)")%>%
+  ggplot(aes(x=class, y=Betapar, color=variable)) +
+  facet_grid(~phylum + supergroup, 
+             scales = "free_x", # Let the x axis vary across facets.
+             space = "free_x",
+             switch = "x")+
+  scale_color_manual(values=c("red","black"))+
+  theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
+  xlab("") +
+  # add in a dotted line at zero
+  geom_hline(yintercept = 0)+
+  geom_point(size=3,alpha=0.9)+
+  labs(y ="Estimated effect", title = "")+
+  geom_errorbar(aes(ymin =lower_cred$Betapar, 
+                    ymax = upper_cred$Betapar, 
+                    color = variable), width = 0.5, linewidth = 0.5)
+
+ggsave(p,file="results/sediment/18S/18S_coef_sed_sal_rich.png",height=9,width=15)

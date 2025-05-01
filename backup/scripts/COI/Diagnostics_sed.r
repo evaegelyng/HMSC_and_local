@@ -7,12 +7,12 @@ library("Hmsc")
 library(colorspace)
 library(vioplot)
 
-load(file = "Water/18S/unfitted_models.RData")
+load(file = "sediment/COI/unfitted_models.RData")
 
-chain1 <- from_json(readRDS(file="Water/18S/post_file00.rds")[[1]])
-chain2 <- from_json(readRDS(file="Water/18S/post_file01.rds")[[1]])
-chain3 <- from_json(readRDS(file="Water/18S/post_file02.rds")[[1]])
-chain4 <- from_json(readRDS(file="Water/18S/post_file03.rds")[[1]])
+chain1 <- from_json(readRDS(file="sediment/COI/post_file00.rds")[[1]])
+chain2 <- from_json(readRDS(file="sediment/COI/post_file01.rds")[[1]])
+chain3 <- from_json(readRDS(file="sediment/COI/post_file02.rds")[[1]])
+chain4 <- from_json(readRDS(file="sediment/COI/post_file03.rds")[[1]])
 
 cat(sprintf("fitting time %.1f sec\n", chain1[[2]]))
 cat(sprintf("fitting time %.1f sec\n", chain2[[2]]))
@@ -26,7 +26,7 @@ thin = 1000
 transient = nSamples*thin
 
 fitTF = importPosteriorFromHPC(models[[1]], postList, nSamples, thin, transient)
-saveRDS(fitTF, file = "Water/18S/fitTF.rds")
+saveRDS(fitTF, file = "sediment/COI/fitTF.rds")
 
 # MAKE THE SCRIPT REPRODUCIBLE 
 set.seed(1)
@@ -41,7 +41,7 @@ maxOmega = 100
 showRho = TRUE
 showAlpha = TRUE
 
-text.file = file.path("Water/18S/MCMC_convergence.txt")
+text.file = file.path("sediment/COI/MCMC_convergence.txt")
 cat("MCMC Convergence statistics\n\n",file=text.file,sep="")
 
 ma.beta = NULL
@@ -54,7 +54,7 @@ ma.alpha = NULL
 na.alpha = NULL  
 ma.rho = NULL
 na.rho = NULL
-    
+
 mpost = convertToCodaObject(fitTF, spNamesNumbers = c(T,F), covNamesNumbers = c(T,F))
 nr = fitTF$nr
 if(showBeta){
@@ -128,7 +128,8 @@ if(showAlpha & nr>0){
 }
 
 nm = length(models)
-pdf(file= file.path("Water/18S/MCMC_convergence.pdf"))
+
+pdf(file= file.path("sediment/COI/MCMC_convergence.pdf"))
 if(showBeta){
   par(mfrow=c(2,1))
   vioplot(ma.beta,col=rainbow_hcl(nm),names=na.beta,ylim=c(0,max(ma.beta)),main="psrf(beta)")
@@ -152,12 +153,13 @@ dev.off()
 #### Compute model fit ####
 
 nfolds = 2 #change the number of CV-folds
+nParallel = 4 #Set to 1 to disable parallel computing
 
 preds = computePredictedValues(fitTF)
 MF = evaluateModelFit(hM=fitTF, predY=preds)
 partition = createPartition(fitTF, nfolds = nfolds, column="Time_d") 
-preds = computePredictedValues(fitTF,partition=partition)
+preds = computePredictedValues(fitTF,partition=partition, nParallel = nParallel)
 MFCV = evaluateModelFit(hM=fitTF, predY=preds)
 WAIC = computeWAIC(fitTF)
       
-save(MF,MFCV,WAIC,file = "Water/18S/model_fit.Rdata")
+save(MF,MFCV,WAIC,file = "sediment/COI/model_fit.Rdata")

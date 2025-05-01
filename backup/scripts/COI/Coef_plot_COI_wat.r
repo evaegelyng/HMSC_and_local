@@ -1,202 +1,121 @@
+# Activate hmsc environment:
+# conda activate hmsc
+
+rm(list = ls())
+
 library(tidyverse)
 library(patchwork)
 library(fields)
 library(Hmsc)
+library(RColorBrewer)
 library(phyloseq)
 
-model<- readRDS("results/Water/COI/COI_wat_241007.rds")
+model <- readRDS("results/Water/COI/fitTF.rds")
 
+################################################################################
+##  Specify taxonomic reference database     ###################################
+################################################################################
+taxonomy <- as.data.frame(colnames(model$Y))
+names(taxonomy) <- "class"
+taxonomy$class_name <- sub("_[^_]+$", "", taxonomy$class)
+taxonomy$new_phylum<-sgroups$new_phylum[match(taxonomy$class_name,sgroups$class)]
 
-coef_beta<- function(model){
-  
-  postBeta = getPostEstimate(model, parName="Beta")
-  
-  supportLevel=0.95
-  mbeta<- postBeta$mean
-  betaP=postBeta$support
-  toPlot = mbeta
+# Load table with supergroups
+sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
 
-  toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
-  toPlot=data.frame(toPlot)
-  rownames(toPlot)<- colnames(model$XScaled)
-  toPlot$variable<- rownames(toPlot) 
- 
-  
-  len<-length(toPlot)-1
-  
-  coef_plot<- toPlot %>% pivot_longer(
-    cols=1:len,
-    values_to="Betapar",
-    names_to="order",
-    names_repair = "minimal"
-  )
-  
-  
-  coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
- 
-  return(coef_plot)
-}
-
-
-coef_plot<- function(beta,parameter=NULL,grouping=NULL,title=NULL){
-  require(RColorBrewer)
-  n <- 9
-  qual_col_pals = brewer.pal.info[brewer.pal.info$category =="qual",]
-  col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
-  
-  beta<-beta %>% data.frame() %>% filter(variable==parameter)
-
-  if(!is.null(grouping)){
-    for(i in 2:length(colnames(grouping))){
-      clade=colnames(grouping)[i]
-      beta[[clade]]<- tax[match(beta$order,grouping[,1]),clade]
-    } 
-
-      clade=colnames(grouping)[length(colnames(grouping))]
-      
-      supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
-                          "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
-
-      beta<- beta[order(factor(beta$supergroup,levels=supergroupOrder),beta$phylum,beta$class),]
-      
-      beta$order<- factor(beta$order, levels=unique(beta$order))
-      
-      for(i in 2:length(colnames(grouping))){
-        clade=colnames(grouping)[i]
-        levels <- unique(beta[[clade]])
-        beta[[clade]]<- factor(beta[[clade]], levels=levels)
-      } 
-      }
-     beta$Betapar=round(as.numeric(beta$Betapar),6)
-  
-  plo<-beta %>% 
-    filter(variable != "(Intercept)")%>%
-    ggplot(aes(x=order, y=Betapar))+
-    scale_color_manual(values=col_vector[11:23])+
-    theme_bw()+
-    scale_y_continuous(labels = scales::label_number(accuracy = 0.0001))  +
-    theme(panel.spacing = unit(0, "lines"), 
-          strip.background = element_blank(), 
-          strip.placement = "outside",
-          axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0),
-          strip.text.x = element_text(angle = 90, size = 8),
-          legend.position="top",
-          legend.box = "horizontal",
-          panel.grid.major.y = element_blank(),
-          legend.text = element_text(size=10)) +
-    xlab("") +
-    geom_point(size=3,alpha=0.9)+
-    # add in a dotted line at zero
-    geom_hline(yintercept = 0) +
-    labs(
-      y ="Estimated effect",
-      title = paste(parameter,title, sep=" "))
-  
-
-  if(!is.null(grouping)){
-  plo<- plo+ 
-      facet_grid(~ class+phylum+supergroup, 
-                 scales = "free_x", # Let the x axis vary across facets.
-                 space = "free_x",  # Let the width of facets vary and force all bars to have the same width.
-                 switch = "x")}    # }
-  
-  return(plo)
-  
-}
-
-
-
-'
-Specify taxonomic reference database:
-'
-
-## Get curated taxonomy
-tax<-read.table("data/curated_taxonomy.tsv",sep="\t",header=T)
+# Add supergroup to taxonomy table
+taxonomy$supergroup <- sgroups$supergroup[match(taxonomy$new_phylum,sgroups$new_phylum)]
 
 ## Rename phylum column to match functions above
-names(tax)[names(tax) == "new_phylum"] <- "phylum"
+names(taxonomy)[3] <- "phylum"
 
-#This function estimates beta coefficients and formats data to plot with ggplot
-beta<-coef_beta(model)
+################################################################################
+##  The coefficient plot for habitat types   ###################################
+################################################################################
 
-#Check variable names:
-unique(beta$variable)
+#Credibility interval addition
+postBeta = getPostEstimate(model,q =c(0.025,0.975), parName="Beta")
 
-sal1<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)1",title="Water",grouping=tax)
-Si<-coef_plot(beta, parameter="Si",title="Water",grouping=tax)
-PO4<-coef_plot(beta, parameter="PO4",title="Water",grouping=tax)
-DN<-coef_plot(beta, parameter="DN",title="Water",grouping=tax)
-Temperature<-coef_plot(beta, parameter="Temperature",title="Water",grouping=tax)
-Chlorophyll<-coef_plot(beta, parameter="Chlorophyll",title="Water",grouping=tax)
-sal2<-coef_plot(beta, parameter="poly(Salinity, degree = 2, raw = TRUE)2",title="Water",grouping=tax)
-
-ggsave("results/Water/COI/COI_coeff_wat_sal1.png", sal1, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_Si.png", Si, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_PO4.png", PO4, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_DN.png", DN, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_temp.png", Temperature, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_chl.png", Chlorophyll, width=10, height=9)
-ggsave("results/Water/COI/COI_coeff_wat_sal2.png", sal2, width=10, height=9)
-
-'
-The coefficient plot for habitat type
-
-'
-postBeta = getPostEstimate(model, parName="Beta")
 supportLevel=0.95
 mbeta<- postBeta$mean
 betaP=postBeta$support
 toPlot = mbeta
 # Support level operations. if the logical expression on the right is False it will set to 0. 
-#The beta supportlevel paramater is wether the mean beta is significant.
+#The beta supportlevel paramater is whether the mean beta is significant.
 toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
 
-toPlot=data.frame(toPlot)
+toPlot = data.frame(toPlot)
 
 rownames(toPlot)<- colnames(model$XScaled)
 
-toPlot$variable<- rownames(toPlot) 
+#Credibility interval addition
+lower_cred <- postBeta$q[1,,]* ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+upper_cred <- postBeta$q[2,,]* ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+
+colnames(lower_cred)<- colnames(toPlot)
+colnames(upper_cred)<- colnames(toPlot)
+rownames(lower_cred)<- paste(rownames(toPlot),"lower_cred",sep="_")
+rownames(upper_cred)<- paste(rownames(toPlot),"upper_cred",sep="_")
+
+toPlot <- rbind(toPlot, lower_cred,upper_cred)
+
+toPlot$variable<- rownames(toPlot)
+
 
 length(toPlot)
 
 coef_plot<- toPlot %>% pivot_longer(
   cols=1:(length(toPlot)-1),
   values_to="Betapar",
-  names_to="order",
+  names_to="class",
   names_repair = "minimal"
 )
 
-coef_plot$phylum<-tax$phylum[match(coef_plot$order,tax$order)] 
-coef_plot$supergroup<-tax$supergroup[match(coef_plot$order,tax$order)] 
-coef_plot$class<-tax$class[match(coef_plot$order,tax$order)] 
-coef_plot<- coef_plot[order(coef_plot$supergroup,coef_plot$phylum,coef_plot$class),]
-coef_plot$order<- factor(coef_plot$order, levels=unique(coef_plot$order))
+# Replace "." with "*" in class names
+coef_plot$class <- sub("\\._", "*_", coef_plot$class)
+
+coef_plot$phylum<-taxonomy$phylum[match(coef_plot$class,taxonomy$class)] 
+coef_plot$supergroup<-taxonomy$supergroup[match(coef_plot$class,taxonomy$class)] 
+coef_plot<- coef_plot[order(coef_plot$supergroup,coef_plot$phylum),]
+coef_plot$class<- factor(coef_plot$class, levels=unique(coef_plot$class))
 coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
 
 require(RColorBrewer)
-#n <- 9
 qual_col_pals = brewer.pal.info[brewer.pal.info$category =="qual",]
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
 
-
 head(coef_plot)
 
+# Extract presence/absence data
+coef_plot_pa <- coef_plot[grep(".PA", coef_plot$class), ]
+
+# Remove ".PA" from class names
+coef_plot_pa$class <- sub("_[^_]+$", "", coef_plot_pa$class)
+
 # Plot for habitat type
-hab<- coef_plot %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
+hab<- coef_plot_pa %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
 
 supergroupOrder = c("Discobids","Cryptista","Archaeplastids","Haptista","SAR_Stramenopiles","SAR_Alveolates",
                     
                     "SAR_Rhizarians","Amoebozoans","Breviates","Apusomonads","Opisthokonts")
 
-hab<- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
+hab <- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
 
 phylumOrder <- as.vector(hab$phylum)
 phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
 
 hab <- within(hab, phylum <- factor(phylum, levels = phylumOrder))
 
+#Take credibility intervals out of "hab" object
+lower_cred<- hab[grepl("lower_cred",hab$variable),]
+upper_cred <-hab[grepl("upper_cred",hab$variable),]
 
-p<-hab%>% 
+#leave only coeficients in "hab" object
+hab <-  hab[!grepl("lower_cred",hab$variable),]
+hab <-  hab[!grepl("upper_cred",hab$variable),]
+
+
+p <- hab%>% 
   filter(variable != "(Intercept)")%>%
   ggplot(aes(x=class, y=Betapar, color=variable)) +
   facet_grid(~phylum + supergroup, 
@@ -206,9 +125,97 @@ p<-hab%>%
   scale_color_manual(values=c("yellowgreen","cornflowerblue"))+
   theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
   xlab("") +
-  geom_point(size=3,alpha=0.9)+
   # add in a dotted line at zero
-  geom_hline(yintercept = 0) +
-  labs(y ="Estimated effect", title = "")
+  geom_hline(yintercept = 0)+
+  geom_point(size=3,alpha=0.9)+
+  labs(y ="Estimated effect", title = "")+
+  geom_errorbar(aes(ymin =lower_cred$Betapar, 
+                    ymax = upper_cred$Betapar, 
+                    color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/Water/COI/coef_wat_hab.png",height=9,width=10)
+ggsave(p,file="results/Water/COI/COI_coef_wat_hab.png",height=9,width=15)
+
+
+# Extract presence only (richness) data
+coef_plot_p <- coef_plot[!grepl(".PA", coef_plot$class), ]
+
+# Remove ".P" from class names
+coef_plot_p$class <- sub("_[^_]+$", "", coef_plot_p$class)
+
+# Plot for habitat type
+hab<- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"habitat",negate=F))
+
+hab <- hab[order(factor(hab$supergroup,levels=supergroupOrder),hab$phylum,hab$class),]
+
+phylumOrder <- as.vector(hab$phylum)
+phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
+
+hab <- within(hab, phylum <- factor(phylum, levels = phylumOrder))
+
+#Take credibility intervals out of "hab" object
+lower_cred<- hab[grepl("lower_cred",hab$variable),]
+upper_cred <-hab[grepl("upper_cred",hab$variable),]
+
+#leave only coeficients in "hab" object
+hab <-  hab[!grepl("lower_cred",hab$variable),]
+hab <-  hab[!grepl("upper_cred",hab$variable),]
+
+
+p <- hab%>% 
+  filter(variable != "(Intercept)")%>%
+  ggplot(aes(x=class, y=Betapar, color=variable)) +
+  facet_grid(~phylum + supergroup, 
+             scales = "free_x", # Let the x axis vary across facets.
+             space = "free_x",
+             switch = "x")+
+  scale_color_manual(values=c("yellowgreen","cornflowerblue"))+
+  theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
+  xlab("") +
+  # add in a dotted line at zero
+  geom_hline(yintercept = 0)+
+  geom_point(size=3,alpha=0.9)+
+  labs(y ="Estimated effect", title = "")+
+  geom_errorbar(aes(ymin =lower_cred$Betapar, 
+                    ymax = upper_cred$Betapar, 
+                    color = variable), width = 0.5, linewidth = 0.5)
+
+ggsave(p,file="results/Water/COI/COI_coef_wat_hab_rich.png",height=9,width=15)
+
+# Plot for salinity
+sal <- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"poly",negate=F))
+
+sal <- sal[order(factor(sal$supergroup,levels=supergroupOrder),sal$phylum,sal$class),]
+
+phylumOrder <- as.vector(sal$phylum)
+phylumOrder <- phylumOrder[!duplicated(phylumOrder)]
+
+sal <- within(sal, phylum <- factor(phylum, levels = phylumOrder))
+
+#Take credibility intervals out of "hab" object
+lower_cred<- sal[grepl("lower_cred",sal$variable),]
+upper_cred <-sal[grepl("upper_cred",sal$variable),]
+
+#leave only coeficients in "hab" object
+sal <-  sal[!grepl("lower_cred",sal$variable),]
+sal <-  sal[!grepl("upper_cred",sal$variable),]
+
+
+p <- sal%>% 
+  filter(variable != "(Intercept)")%>%
+  ggplot(aes(x=class, y=Betapar, color=variable)) +
+  facet_grid(~phylum + supergroup, 
+             scales = "free_x", # Let the x axis vary across facets.
+             space = "free_x",
+             switch = "x")+
+  scale_color_manual(values=c("red","black"))+
+  theme_bw() + theme(panel.spacing = unit(0, "lines"), strip.background = element_blank(), strip.placement = "outside", axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0), strip.text.x = element_text(angle = 90, size = 8), legend.position="top",legend.box = "horizontal", panel.grid.major.y = element_blank(),legend.text = element_text(size=10)) +
+  xlab("") +
+  # add in a dotted line at zero
+  geom_hline(yintercept = 0)+
+  geom_point(size=3,alpha=0.9)+
+  labs(y ="Estimated effect", title = "")+
+  geom_errorbar(aes(ymin =lower_cred$Betapar, 
+                    ymax = upper_cred$Betapar, 
+                    color = variable), width = 0.5, linewidth = 0.5)
+
+ggsave(p,file="results/Water/COI/COI_coef_wat_sal_rich.png",height=9,width=15)

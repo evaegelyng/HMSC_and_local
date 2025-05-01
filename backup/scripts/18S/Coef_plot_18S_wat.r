@@ -10,20 +10,20 @@ library(Hmsc)
 library(RColorBrewer)
 library(phyloseq)
 
-model <- readRDS("results/sediment/COI/fitTF.rds")
+model <- readRDS("results/Water/18S/fitTF.rds")
 
 ################################################################################
 ##  Specify taxonomic reference database     ###################################
 ################################################################################
-#Load rarefied dataset
-COSQ_rare<-readRDS("data/COI_no_c2_3reps.rds")
-# Extracting taxonomy table from phyloseq object
-taxa<-data.frame(tax_table(COSQ_rare))
-
 taxonomy <- as.data.frame(colnames(model$Y))
 names(taxonomy) <- "class"
 taxonomy$class_name <- sub("_[^_]+$", "", taxonomy$class)
-taxonomy$new_phylum<-taxa$new_phylum[match(taxonomy$class_name,taxa$new_class)]
+
+# Load table with corrected phylum names
+tax<-read.table("data/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
+
+# Add new phylum names
+taxonomy$new_phylum<-tax$new_phylum[match(taxonomy$class_name,tax$class)]
 
 # Load table with supergroups
 sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
@@ -76,12 +76,10 @@ coef_plot<- toPlot %>% pivot_longer(
   names_repair = "minimal"
 )
 
-# Replace "." with "*" in class names
-coef_plot$class <- sub("\\._", "*_", coef_plot$class)
 
 coef_plot$phylum<-taxonomy$phylum[match(coef_plot$class,taxonomy$class)] 
 coef_plot$supergroup<-taxonomy$supergroup[match(coef_plot$class,taxonomy$class)] 
-coef_plot<-coef_plot[order(coef_plot$supergroup,coef_plot$phylum),]
+coef_plot<- coef_plot[order(coef_plot$supergroup,coef_plot$phylum),]
 coef_plot$class<- factor(coef_plot$class, levels=unique(coef_plot$class))
 coef_plot$Betapar<- as.numeric(coef_plot$Betapar) 
 
@@ -138,7 +136,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/COI/COI_coef_sed_hab.png",height=9,width=15)
+ggsave(p,file="results/Water/18S/18S_coef_wat_hab.png",height=9,width=15)
 
 
 # Extract presence only (richness) data
@@ -184,7 +182,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/COI/COI_coef_sed_hab_rich.png",height=9,width=15)
+ggsave(p,file="results/Water/18S/18S_coef_wat_hab_rich.png",height=9,width=15)
 
 # Plot for salinity
 sal <- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"poly",negate=F))
@@ -223,4 +221,4 @@ p <- sal%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/COI/COI_coef_sed_sal_rich.png",height=9,width=15)
+ggsave(p,file="results/Water/18S/18S_coef_wat_sal_rich.png",height=9,width=15)
