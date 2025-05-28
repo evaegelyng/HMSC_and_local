@@ -1,0 +1,274 @@
+---
+title: "supergroup plots correct data"
+author: "Karoline"
+date: "1/2/2023"
+output: html_document
+---
+
+```{r load libraries}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library("gridExtra")
+library(RColorBrewer)
+library(phyloseq)
+```
+
+# 18S data
+
+```{r import data}
+
+## Get tax table
+euk_rare<-readRDS("../RDS/18S_no_c2_3reps.rds")
+
+## Get taxonomy
+tax18S<-as.data.frame(tax_table(euk_rare))
+
+# Load table with corrected phylum names and marine/non-marine
+tax_cur<-read.table("../Tekstfiler/18S/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
+```
+
+# COI 70-dataset
+
+```{r import data}
+
+## Get phyloseq object
+COSQ_rare2_70 <- readRDS("../RDS/COI_no_c2_3reps.rds")
+
+## Get taxonomy
+taxa_rare<-data.frame(tax_table(COSQ_rare2_70))
+```
+
+# 16S dataset
+
+```{r import data}
+
+## Get phyloseq object
+Prok_rare2 <- readRDS("../RDS/16S_no_c2_3reps.rds")
+
+## Get taxonomy
+tax16S<-data.frame(tax_table(Prok_rare2))
+```
+
+```{r consistency 18S and COI}
+
+## Add curated phylum names
+tax18S$new_phylum<-tax_cur$new_phylum[match(tax18S$class,tax_cur$class)]
+tax18S<-within(tax18S,rm(phylum))
+
+tax18S_unique <- tax18S %>% distinct(new_phylum, class, .keep_all=TRUE)
+
+# Number of unique classifications
+nrow(tax18S_unique) # 148
+# Number of unique classes
+length(tax18S_unique$class) # 148
+# There are no inconsistencies within the 18S taxonomy (no duplicates of classes in tax18S_unique)
+
+# Same for COI
+taxCOI_unique <- taxa_rare %>% distinct(new_phylum, new_class, .keep_all=TRUE)
+# Number of unique classifications
+nrow(taxCOI_unique) # 86
+# Number of unique classes
+length(taxCOI_unique$class) # 86
+# There are no inconsistencies within the COI taxonomy (no duplicates of classes in tax18S_unique)
+
+# Check for class names in 18S that are phylum names in COI
+tax18S_unique$class %in% taxCOI_unique$new_phylum
+
+# Check for class names in COI that are phylum names in 18S
+taxCOI_unique$new_class %in% tax18S_unique$new_phylum
+
+# Check for other cases with same phylum and class name
+taxCOI_unique$double <- ifelse(taxCOI_unique$new_phylum==taxCOI_unique$new_class,"yes","no")
+View(taxCOI_unique)
+# No cases
+
+tax18S_unique$double <- ifelse(tax18S_unique$new_phylum==tax18S_unique$class,"yes","no")
+#View(tax18S_unique)
+# No cases
+```
+## 18S data
+
+```{r supergroups}
+
+# Load table with supergroups
+sgroups <- read.table("../Tekstfiler/Across_barcodes/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
+
+# Add a new column w. supergroup
+tax18S$supergroup <- sgroups$supergroup[match(tax18S$new_phylum,sgroups$new_phylum)]
+
+# Check that there are no "NAs"
+unique(tax18S$supergroup)
+```
+
+## Summarise data
+
+```{r summarise supergroup}
+
+# Count no. of OTUs per supergroup
+otus_pr_supergroup<-tax18S %>% group_by(supergroup) %>% dplyr::summarise(n=n())
+
+# Check that the no. of OTUs is correct
+sum(otus_pr_supergroup$n)
+# 10672
+
+# Order supergroups by no. of OTUs
+otus_pr_supergroup <-otus_pr_supergroup[order(-(otus_pr_supergroup$n)),]
+colnames(otus_pr_supergroup)[2] = "No_of_OTUs"
+```
+
+## Barplot
+
+```{r OTUS pr supergroup barplot}
+
+# Find a suitable colour pallette
+length(otus_pr_supergroup$supergroup)
+display.brewer.all(n=9, type="all", select=NULL, exact.n=TRUE, colorblindFriendly=FALSE)
+
+# Print the codes for the colors in the "Paired" pallette 
+brewer.pal(9,"Paired")
+
+cols <- c("Amoebozoans" = "#A6CEE3", "Archaeplastids" = "#1F78B4", "Breviates"= "#B2DF8A", "Cryptista" = "#33A02C", "Discobids" = "#FB9A99", "Opisthokonts" = "#E31A1C", "SAR_Alveolates" = "#FDBF6F","SAR_Rhizarians" = "#FF7F00", "SAR_Stramenopiles" = "#CAB2D6")
+
+bp18S <- ggplot(otus_pr_supergroup, aes(reorder(x=factor(supergroup), No_of_OTUs), y=No_of_OTUs, fill=factor(supergroup))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +  
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='No. of MOTUs', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp18S
+
+```
+
+```{r COI supergroups}
+
+# Add a new column w. supergroup
+taxa_rare$supergroup <- sgroups$supergroup[match(taxa_rare$new_phylum,sgroups$new_phylum)]
+
+## Add supergroup to Bacillariophyta_NA
+taxa_rare$supergroup[taxa_rare$new_phylum=="Bacillariophyta_NA"]<-"SAR_Stramenopiles"
+```
+
+## Summarise data
+
+```{r summarise per supergroup}
+
+# Count no. of OTUs per supergroup
+otus_pr_supergroup<-taxa_rare %>% group_by(supergroup) %>% dplyr::summarise(n=n())
+
+# Check that the no. of OTUs is correct
+sum(otus_pr_supergroup$n)
+# 6356
+
+# Order supergroups by no. of OTUs
+otus_pr_supergroup <-otus_pr_supergroup[order(-(otus_pr_supergroup$n)),]
+colnames(otus_pr_supergroup)[2] = "No_of_OTUs"
+```
+
+## Barplot
+
+```{r OTUS pr supergroup barplot}
+
+bp70 <- ggplot(otus_pr_supergroup, aes(reorder(x=factor(supergroup), No_of_OTUs), y=No_of_OTUs, fill=factor(supergroup))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp70
+```
+
+# COI 97-data
+
+```{r import data}
+
+pident97 <- read.table("../Tekstfiler/COI/COI_97/COI_no_c2_3reps_97_tax_4.tsv",sep='\t', header=T)
+```
+
+## Summarise data
+
+```{r summarise supergroup}
+
+# Count no. of OTUs per supergroup
+otus_pr_supergroup<-pident97 %>% group_by(supergroup) %>% dplyr::summarise(n=n())
+
+# Check that the no. of OTUs is correct
+sum(otus_pr_supergroup$n)
+# 583
+
+# Order supergroups by no. of OTUs
+otus_pr_supergroup <-otus_pr_supergroup[order(-(otus_pr_supergroup$n)),]
+colnames(otus_pr_supergroup)[2] = "No_of_OTUs"
+```
+
+## Barplot
+
+```{r OTUS pr kingdom barplot}
+
+bp97 <- ggplot(otus_pr_supergroup, aes(reorder(x=factor(supergroup), No_of_OTUs), y=No_of_OTUs, fill=factor(supergroup))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='No. of MOTUs', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp97
+```
+
+## Summarise data
+
+```{r summarise per supergroup}
+
+# Count no. of OTUs per supergroup
+otus_pr_kingdom<-tax16S %>% group_by(Kingdom) %>% dplyr::summarise(n=n())
+
+# Check that the no. of OTUs is correct
+sum(otus_pr_kingdom$n)
+# 54418
+
+# Order kingdoms by no. of OTUs
+otus_pr_kingdom <-otus_pr_kingdom[order(-(otus_pr_kingdom$n)),]
+colnames(otus_pr_kingdom)[2] = "No_of_OTUs"
+```
+
+## Barplot
+
+```{r OTUS pr kingdom barplot}
+
+cols <- c("Bacteria" = "purple", "Archaea" = "forestgreen")
+          
+bp16S <- ggplot(otus_pr_kingdom, aes(reorder(x=factor(Kingdom), No_of_OTUs), y=No_of_OTUs, fill=factor(Kingdom))) +
+  geom_bar(width=0.8, stat="identity", position=position_dodge()) +
+  scale_fill_manual(values=cols) +
+  theme(axis.title.x = element_text(margin = margin(r = 20), angle = 45, vjust = 0.5, hjust = 0.5),   # Rotate x-axis title
+        axis.text.x = element_text(angle = 75, vjust = 0.3, size = 10)) +  # Rotate x-axis labels
+  labs(y='', x='') +
+  ggtitle("") +
+  theme(axis.title = element_text(size = 14), 
+        plot.title.position = "plot",
+        plot.margin = margin(b = 30)) +  # Adjust bottom margin to leave more space for x-axis titles
+  guides(fill = "none")  # or guides(color = FALSE) if you want to remove color legend
+
+bp16S
+
+#Combine plots for all three datasets
+bp_supergroup <- grid.arrange(bp18S,bp70,bp97,bp16S,nrow=2,ncol=2)
+ggsave(file="../Plots/Barplots/Supergroups.png",bp_supergroup,width=30,height=30,units="cm")
+```

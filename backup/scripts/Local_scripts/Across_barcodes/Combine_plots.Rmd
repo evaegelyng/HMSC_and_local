@@ -1,0 +1,148 @@
+---
+title: "Combine_plots"
+output: html_document
+date: "2024-10-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(ggpubr)
+```
+
+```{r boxplot habitat}
+
+euk <- readRDS("../../Plots/Boxplots/18S_habitat.rds")
+coi <- readRDS("../../Plots/Boxplots/COI_habitat.rds")
+pro <- readRDS("../../Plots/Boxplots/16S_habitat.rds")
+
+ggsave(file="../../Plots/Boxplots/All_hab.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=35,units="cm")
+```
+
+```{r boxplot substrate}
+
+euk_sub <- readRDS("../Plots/Boxplots/18S_substrate.rds")
+coi_sub <- readRDS("../Plots/Boxplots/COI_substrate.rds")
+pro_sub <- readRDS("../Plots/Boxplots/16S_substrate.rds")
+
+ggsave(file="../Plots/Boxplots/All_substr.png",ggarrange(euk_sub,coi_sub,pro_sub,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"),width=20,height=35,units="cm")
+```
+
+```{r nmds}
+
+euk_both <- readRDS("../Plots/NMDS/NMDS_18S_both.rds")
+coi_both <- readRDS("../Plots/NMDS/NMDS_COI_both.rds")
+pro_both <- readRDS("../Plots/NMDS/NMDS_16S_both.rds")
+
+ggsave(file="../Plots/NMDS/NMDS_sub.png",ggarrange(euk_both,coi_both,pro_both,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"))
+```
+
+```{r hab}
+
+euk_hab_s <-readRDS("../Plots/NMDS/NMDS_18S_hab_sed.rds")
+euk_hab_w <-readRDS("../Plots/NMDS/NMDS_18S_hab_wat.rds")
+coi_hab_s <- readRDS("../Plots/NMDS/NMDS_70_hab_sed.rds")
+coi_hab_w <- readRDS("../Plots/NMDS/NMDS_70_hab_wat.rds")
+pro_hab_s <- readRDS("../Plots/NMDS/NMDS_16S_hab_sed.rds")
+pro_hab_w <- readRDS("../Plots/NMDS/NMDS_16S_hab_wat.rds")
+
+ggsave(file="../Plots/NMDS/NMDS_hab.png",ggarrange(euk_hab_s,euk_hab_w,coi_hab_s,coi_hab_w,pro_hab_s,pro_hab_w,ncol=2,nrow=3,align="h",common.legend=TRUE,legend="top"),
+       width = 150,
+       height = 150,
+       units = "mm",
+       dpi = 200)
+```
+
+```{r sal}
+
+euk_sal_s <-readRDS("../Plots/NMDS/NMDS_18S_sal_sed.rds")
+euk_sal_w <-readRDS("../Plots/NMDS/NMDS_18S_sal_wat.rds")
+coi_sal_s <- readRDS("../Plots/NMDS/NMDS_70_sal_sed.rds")
+coi_sal_w <- readRDS("../Plots/NMDS/NMDS_70_sal_wat.rds")
+pro_sal_s <- readRDS("../Plots/NMDS/NMDS_16S_sal_sed.rds")
+pro_sal_w <- readRDS("../Plots/NMDS/NMDS_16S_sal_wat.rds")
+
+ggsave(file="../Plots/NMDS/NMDS_sal.png",ggarrange(euk_sal_s,euk_sal_w,coi_sal_s,coi_sal_w,pro_sal_s,pro_sal_w,ncol=2,nrow=3,align="h",common.legend=TRUE,legend="top"),
+       width = 150,
+       height = 150,
+       units = "mm",
+       dpi = 200)
+```
+
+```{r nmds all}
+
+ggsave(file="../Plots/NMDS/NMDS_all.png",ggarrange(euk_both,euk_hab_s,euk_hab_w,euk_sal_s,euk_sal_w,coi_both,coi_hab_s,coi_hab_w,coi_sal_s,coi_sal_w,pro_both,pro_hab_s,pro_hab_w,pro_sal_s,pro_sal_w,ncol=5,nrow=3,align="h",common.legend=TRUE,legend="top"),
+       width = 200,
+       height = 150,
+       units = "mm",
+       dpi = 200)
+```
+
+```{r venn}
+
+euk_hab_s <-readRDS("../Plots/Venn/18S_sed.rds")
+euk_hab_w <-readRDS("../Plots/Venn/18S_wat.rds")
+coi_hab_s <- readRDS("../Plots/Venn/COI_70_sed.rds")
+coi_hab_w <- readRDS("../Plots/Venn/COI_70_wat.rds")
+pro_hab_s <- readRDS("../Plots/Venn/16S_sed.rds")
+pro_hab_w <- readRDS("../Plots/Venn/16S_wat.rds")
+
+ggsave(file="../Plots/Venn/Venn_all.png",ggarrange(euk_hab_s,euk_hab_w,coi_hab_s,coi_hab_w,pro_hab_s,pro_hab_w,ncol=2,nrow=3,align="h",common.legend=TRUE,legend="top"),
+       width = 100,
+       height = 150,
+       units = "mm",
+       dpi = 200)
+```
+
+```{r venn comb}
+
+euk_hab_comb <-readRDS("../Plots/Venn/18S_both.rds")
+coi_hab_comb <- readRDS("../Plots/Venn/COI_70_both.rds")
+pro_hab_comb <- readRDS("../Plots/Venn/16S_both.rds")
+
+ggsave(file="../Plots/Venn/Venn_all_comb.png",ggarrange(euk_hab_comb,coi_hab_comb,pro_hab_comb,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"),
+       width = 100,
+       height = 150,
+       units = "mm",
+       dpi = 200)
+```
+
+```{r nmds comb hab}
+
+euk_comb <- readRDS("../Plots/NMDS/NMDS_18S_hab_comb.rds")
+coi_comb <- readRDS("../Plots/NMDS/NMDS_70_hab_comb.rds")
+pro_comb <- readRDS("../Plots/NMDS/NMDS_16S_hab_comb.rds")
+
+ggsave(file="../Plots/NMDS/NMDS_hab_comb.png",ggarrange(euk_comb,coi_comb,pro_comb,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"))
+```
+
+```{r nmds comb sal}
+
+euk_comb <- readRDS("../Plots/NMDS/NMDS_18S_sal_comb.rds")
+coi_comb <- readRDS("../Plots/NMDS/NMDS_70_sal_comb.rds")
+pro_comb <- readRDS("../Plots/NMDS/NMDS_16S_sal_comb.rds")
+
+ggsave(file="../Plots/NMDS/NMDS_sal_comb.png",ggarrange(euk_comb,coi_comb,pro_comb,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"))
+```
+
+```{r boxplot habitat comb}
+
+euk <- readRDS("../Plots/Boxplots/18S_habitat_comb.rds")
+coi <- readRDS("../Plots/Boxplots/COI_habitat_comb.rds")
+pro <- readRDS("../Plots/Boxplots/16S_habitat_comb.rds")
+
+ggsave(file="../Plots/Boxplots/All_hab_comb.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=35,units="cm")
+```
+
+```{r genetic variation}
+
+nmds_wat <- readRDS("../../Plots/NMDS/NMDS_ASVs_sal_wat.rds")
+nmds_sed <- readRDS("../../Plots/NMDS/NMDS_ASVs_sal_sed.rds")
+heat_sed <- readRDS("../../Plots/Heatmap_Djost_sed.rds")
+heat_wat <- readRDS("../../Plots/Heatmap_Djost_wat.rds")
+
+ggsave(file="../../Plots/NMDS/NMDS_heatmaps.pdf",ggarrange(nmds_sed,nmds_wat,heat_sed,heat_wat,ncol=2,nrow=2,heights=c(1,2)),width=40,height=40,units="cm")
+```
+

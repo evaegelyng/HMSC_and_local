@@ -1,0 +1,317 @@
+---
+title: "MOTU analyses"
+author: "Eva Egelyng Sigsgaard"
+date: "2025-02-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, message=FALSE}
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+library(ggrepel)
+library(phyloseq)
+library(hrbrthemes)
+library(viridis)
+library(e1071)
+library(FSA)
+library(car)
+library(ggVennDiagram)
+library(ggvenn)
+library(eulerr)
+library(tidyverse)
+library(ggforce)
+```
+
+```{r load data}
+
+# Load rarefied dataset
+DT1<-readRDS("../../RDS/18S_no_c2_3reps.rds")
+
+## Get OTU table
+rep_agg<-data.frame(otu_table(DT1),check.names=F)
+
+## Get sample data
+d<-data.frame(sample_data(DT1),check.names=F)
+```
+
+```{r combine substrates}
+
+# Add column indicating season, sampling site and habitat type
+rep_agg$sch<-d$sch[match(row.names(rep_agg),row.names(d))]
+
+# Aggregate sediment and water samples from same sampling event
+rep_agg_comb<-aggregate(. ~ sch, rep_agg, sum)
+row.names(rep_agg_comb)<-rep_agg_comb$sch
+rep_agg_comb<-within(rep_agg_comb,rm(sch))
+
+# Save abundance table for boxplots
+rep_agg_abun<-rep_agg_comb
+
+##Convert to presence/absence
+rep_agg_comb[rep_agg_comb>0]<-1
+```
+
+```{r prepare boxplots}
+
+# Subset to clusters where all three habitats were sampled
+d$sc<-paste(d$season,d$cluster,sep="_")
+rep_agg_abun$sc<-d$sc[match(row.names(rep_agg_abun),d$sch)]
+length(unique(rep_agg_abun$sc)) # 62
+hab_reps<-rep_agg_abun %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+rep_3hab<-rep_agg_abun[rep_agg_abun$sc %in% three_hreps$sc, ]
+
+##Convert to presence/absence
+rep_3hab<-within(rep_3hab,rm(sc))
+rep_3hab[rep_3hab>0]<-1
+
+# Calculate MOTU richness per sample
+rep_3hab$rich<-rowSums(rep_3hab)
+
+rep_3hab$habitat<-d$habitat[match(row.names(rep_3hab),d$sch)]
+rep_3hab$season<-d$season[match(row.names(rep_3hab),d$sch)]
+
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+dat <- rep_3hab %>% tibble::rownames_to_column(var="outlier") %>% group_by(habitat,season) %>% mutate(is_outlier=ifelse(is_outlier(rich), rich, as.numeric(NA)))
+dat$outlier[which(is.na(dat$is_outlier))] <- as.numeric(NA)
+dat$cluster<-d$cluster[match(dat$outlier,d$sch)]
+```
+
+```{r grouped boxplot, fig.width = 10, fig.height = 7}
+
+ggplot(dat, aes(x=habitat, y=rich)) + 
+    geom_boxplot() +
+  xlab("") + ylab("MOTU richness")+
+  facet_grid(. ~ season)+ 
+  theme(legend.position = "right", text = element_text(size = 18))+
+  geom_text(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)
+```
+To test for statistically significant differences between habitats. we will first look at the distribution of the data.
+```{r distribution plots of raw richness, warning = FALSE}
+
+ggplot(data = dat, aes(x = rich, group = habitat, fill=habitat)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+  theme_ipsum() +
+    labs(y = "", x = "Richness", title = "Distribution of Raw Richness values", fill = "Habitat")
+```
+
+Richness looks a little skewed, but lets formally test it:
+
+```{r testing skewness, include = TRUE, warning = FALSE}
+
+skewness(dat$rich)
+```
+
+There is no skewness in the data (value was <0.5 and >-0.5), so lets test if any habitat has a statistically different richness from the others.
+Apart from the outliers we might still be able to use a parametric test (e.g. ANOVA) because 
+we don't have to have normality of the single datapoints we just need homoscedascity (i.e. the residuals need to be normally distributed).
+So lets try an ANOVA and check for normality of residuals.
+
+```{r Habitat ANOVA test }
+
+dat$habitat <- as.factor(dat$habitat)
+res_aov_rich_hab <- aov(rich ~ habitat,
+  data = dat)
+summary(res_aov_rich_hab)
+```
+
+There is significant difference in richness between habitats!
+Lets look at the residuals.
+
+```{r Habitat ANOVA residuals, message=FALSE}
+
+hist(res_aov_rich_hab$residuals)
+qqPlot(res_aov_rich_hab$residuals, id = FALSE)
+```
+
+Plotting the residuals from the ANOVA does not clearly show that residuals are normally distributed.
+We would do best to perform a non-parametric test. Let's try the Kruskal-Wallis test:
+
+```{r Kruskal-Wallis test habitat}
+
+kruskal.test(rich ~ habitat,
+  data = dat)
+```
+
+With the non-parametric test there is a significant difference in CO1 richness between habitats.
+But lets see where the difference lies.
+We will use a non-parametric post-hoc test, the Dunn test.
+```{r Dunn test,message=FALSE}
+
+dunn_res_hab <- dunnTest(rich ~ habitat,
+  data = dat,
+  method = "bonferroni"
+)
+dunn_res_hab
+```
+
+From these comparisons it looks like there is a higher richness in rocks compared to either sand or eelgrass, even after correcting for multiple testing.
+
+Lets visualise these differences on the box plot, first across seasons:
+
+```{r grouped boxplot w. sig diff w.o. season, fig.width = 10, fig.height = 7}
+
+boxplot_habitat<- ggplot(dat, aes(x=habitat, y=rich)) + 
+    geom_boxplot() +
+  xlab("") + ylab("MOTU richness")+
+  theme(legend.position = "right" , text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+ geom_pwc(aes(group = habitat),
+           tip.length = 0,
+           method = "dunn_test")
+
+ggadjust_pvalue(
+  boxplot_habitat, p.adjust.method = "bonferroni",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+```
+And then a boxplot of habitat differences split into season:
+
+```{r grouped boxplot w. sig diff, fig.width = 12, fig.height = 8}
+
+dat$season <- factor(dat$season, levels=c("spring", "autumn"))
+
+cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
+
+boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) + 
+  geom_boxplot() +
+  scale_fill_manual(values = cols,
+                     name = "", breaks = unique(d$habitat),
+                     labels = unique(d$habitat)) +
+  xlab("") + ylab("MOTU richness")+
+  facet_wrap(. ~ season, ncol = 4)+ 
+  theme(legend.position = "NA" , text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_pwc(aes(group = habitat),
+           tip.length = 0,
+           method = "dunn_test")
+
+boxplot_habitat_adj <- ggadjust_pvalue(
+  boxplot_habitat_season, p.adjust.method = "bonferroni",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+
+boxplot_habitat_adj
+
+saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/18S_habitat_comb.rds")
+```
+Looks like only the sand-rock comparison in autumn survives correction for multiple testing. 
+
+```{r nmds habitat}
+
+#NB., the number of points n should be n > 2k + 1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  comb_nmds <- metaMDS(rep_agg_comb, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs <- as.data.frame(scores(comb_nmds, display = "sites"))
+  site_scrs$habitat <- d$habitat[match(row.names(site_scrs), d$sch)]
+  site_scrs$season <- d$season[match(row.names(site_scrs), d$sch)]
+  
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  plots_hab<-list()
+  
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(d$habitat),
+                     labels = unique(d$habitat)) +
+  geom_point(alpha=1,size=2) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 10), legend.title = element_blank(), axis.text = element_text(size = 8),axis.title.x = element_blank(), axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+
+saveRDS(nmds_sed,"../../Plots/NMDS/NMDS_18S_hab_comb.rds")
+```
+
+##PERMANOVA analysis
+```{r permanova sed}
+
+dist<-vegdist(rep_agg_comb,method="jaccard")
+
+#Make new metadata table for sediment
+meta<-as.data.frame(row.names(rep_agg_comb))
+row.names(meta)<-meta$`row.names(rep_agg_comb)`
+meta$habitat<-d$habitat[match(row.names(meta),d$sch)]
+meta<-within(meta,rm(`row.names(rep_agg_comb)`))
+
+#Test for homogeneity of multivariate dispersions
+b<-betadisper(dist,meta$habitat)
+permutest(b)
+
+# There is a significant difference in multivariate dispersion
+  
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ habitat, data = meta)
+permanova
+
+# There is a significant difference between habitats
+
+## Same test for season
+
+#Test for homogeneity of multivariate dispersions
+meta$season<-d$season[match(row.names(meta),d$sch)]
+b<-betadisper(dist,meta$season)
+permutest(b)
+
+# There is no significant difference in multivariate dispersion
+
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ season, data = meta)
+permanova
+
+# There is a significant difference between seasons
+```
+
+```{r nmds salinity}
+
+## Get salinities
+coord<-read.table("../../Tekstfiler/Across_barcodes/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+site_scrs$salinity <- coord$Salinity[match(row.names(site_scrs), row.names(coord))]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs, FUN = mean)
+segs <- merge(site_scrs, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+# set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+
+cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
+
+plots<-list()
+
+nmds_sal<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2)) + 
+  scale_colour_stepsn(colours = rev(cols),
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1, size=2, aes(colour = salinity, shape = season)) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 10), legend.title = element_text(size = 12), axis.text = element_text(size = 8),axis.title.x = element_blank(), axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("") +
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+  
+saveRDS(nmds_sal,"../../Plots/NMDS/NMDS_18S_sal_comb.rds")
+```

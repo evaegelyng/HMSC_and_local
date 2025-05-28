@@ -1,0 +1,132 @@
+---
+title: "Normalizing pident97 data"
+author: "Karoline and Eva"
+date: "03/03/2025"
+output: html_document
+---
+
+# Normalising data
+
+#Create phyloseq object:
+```{r load packages}
+library('plyr')
+library(dplyr)
+library(tidyr)
+library(scales)
+library(phyloseq)
+library(stringr)
+```
+
+```{r import and filter data}
+
+## Read phyloseq object
+pident70 <- readRDS("../../RDS/COI_no_c2_3reps.rds")
+
+## Extract taxonomy table
+tax_m<-data.frame(tax_table(pident70))
+
+# Load table with supergroups
+sgroups <- read.table("../../Tekstfiler/Across_barcodes/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
+
+# Add supergroups
+tax_m$supergroup <- sgroups$supergroup[match(tax_m$new_phylum,sgroups$new_phylum)]
+
+## Extract sequences with min. 97% sequence similarity to ref database
+# Add column to taxonomy table saying whether similarity is above 97%
+tax_m <- tax_m %>% mutate(above_97 = ifelse(as.numeric(pident.max.best) >= 97, "yes", "no"))
+# Replace taxonomy table in phyloseq object with updated table
+tax_table(pident70) <- as.matrix(tax_m)
+# Filter phyloseq object by new column
+pident97 <- subset_taxa(pident70,above_97=="yes")
+
+## Merge samples from the same sampling station to allow estimating frequency of taxa (in terms of presence in X no. of stations)
+
+merged = merge_samples(pident97, "cluster")
+SD = merge_samples(sample_data(pident97), "cluster")
+
+sample_names(merged)
+
+otu <- as.data.frame(otu_table(merged))
+
+## Count no. of MOTUs 
+ncol(otu)
+
+## Count for each taxon the number of clusters where it is present
+no_clusters<-colSums(otu != 0)
+no_clusters_df <- as.data.frame(no_clusters)
+
+## Extract and export new taxonomy table
+tax_97 <- data.frame(tax_table(pident97))
+## Remove unnecessary columns
+tax_97 <- within(tax_97,rm("margin","qcovs","pident","above_97"))
+## Add prevalence
+tax_97$no_stations <- no_clusters_df$no_clusters[match(row.names(tax_97),row.names(no_clusters_df))]
+
+## Count no. of ASVs
+sum(as.numeric(tax_97$cluster_weight)) 
+
+write.table(tax_97,"../../Tekstfiler/COI/COI_97/COI_no_c2_3reps_97_tax_prev.tsv",sep="\t",row.names = T)
+
+## Loading final curated taxonomy table 
+COSQ_all <- read.table("../../Tekstfiler/COI/COI_97/Supplementary_table_A.txt", sep="\t", header=T, check.names=F)
+
+### Load unrarefied OTU table incl. taxonomy
+pident70<-read.table("../../Tekstfiler/COI/COI_70/COSQ_final_dataset_cleaned_pident_70.tsv",sep="\t", header=T, check.names=F)
+n<-ncol(pident70)
+### Extract all sample columns
+otu_table <- pident70[,29:n] 
+row.names(otu_table) <- pident70$id
+
+# Extract 97% MOTUs from unrarefied OTU table
+otu_97 <- otu_table[row.names(otu_table) %in% row.names(tax_97),]
+
+## Count no. of reads 
+sum(colSums(otu_97))
+
+# Extract curated MOTUs from previous taxonomy table
+tax_97_cur <- tax_97[row.names(tax_97) %in% COSQ_all$seq_id,]
+
+## Count no. of ASVs
+sum(as.numeric(tax_97_cur$cluster_weight)) 
+
+# Extract curated MOTUs from unrarefied OTU table
+otu_cur <- otu_table[row.names(otu_table) %in% COSQ_all$seq_id,]
+
+## Count no. of reads 
+sum(colSums(otu_cur))
+
+### Remove terrestrial taxa
+COSQ_marine <- COSQ_all[which(COSQ_all$marine=="Yes" | COSQ_all$marine=="Yes (mainly Freshwater)"),]
+nrow(COSQ_marine) # 484
+### Remove MOTUs not identified to species level
+COSQ_species <- COSQ_marine %>% filter(!str_detect(final_id_curated, 'COSQ'))
+nrow(COSQ_species) # 477
+
+# Extract curated MOTUs from previous taxonomy table
+tax_97_mar_sp <- tax_97[row.names(tax_97) %in% COSQ_species$seq_id,]
+
+## Count no. of ASVs
+sum(as.numeric(tax_97_mar_sp$cluster_weight)) 
+
+# Extract curated MOTUs from unrarefied OTU table
+otu_mar_sp <- otu_table[row.names(otu_table) %in% COSQ_species$seq_id,]
+
+## Count no. of reads 
+sum(colSums(otu_mar_sp))
+
+### Remove MOTUs present at a single station
+COSQ_prevalent <- COSQ_species[which(COSQ_species$no_stations>1),] 
+nrow(COSQ_prevalent) # 368
+
+# Extract curated MOTUs from previous taxonomy table
+tax_97_min2 <- tax_97[row.names(tax_97) %in% COSQ_prevalent$seq_id,]
+
+## Count no. of ASVs
+sum(as.numeric(tax_97_min2$cluster_weight)) 
+
+# Extract curated MOTUs from previous OTU table
+otu_min2 <- otu_table[row.names(otu_table) %in% COSQ_prevalent$seq_id,]
+
+## Count no. of reads 
+sum(colSums(otu_min2))
+```

@@ -1,0 +1,68 @@
+---
+title: "COI_coverage"
+author: "Eva Sigsgaard"
+date: "2025-02-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+
+library(readxl)
+library(dplyr)
+```
+
+```{r import data}
+
+# Before running this script, I extracted only the marine species and relevant columns from the file ArterDB.xlsx, translated the header names to English and converted to the text file imported here
+
+Mads_table <- read.table("../../Tekstfiler/COI/COI_97/ArterDB_extract_synonyms.txt",sep="\t", header=T)
+Mads_table <- within(Mads_table,rm(X))
+
+Sp_list <- read_xlsx("../../Manuscript/Source_data_Supp_info.xlsx")
+```
+
+```{r summarize barcode coverage}
+
+# Count no. of marine species per phylum
+species_counts <- Mads_table %>% group_by(Phylum) %>% summarize(
+      count = length(Phylum))
+
+# Count no. of species per phylum with a BOLD barcode
+barcode_counts <- Mads_table %>% group_by(Phylum) %>% summarize(
+      count = length(Phylum[BOLD_barcode=="x"]))
+
+# Combine tables
+species_counts$barcodes <- barcode_counts$count[match(species_counts$Phylum,barcode_counts$Phylum)]
+
+# Calculate percentage of species with a BOLD barcode
+species_counts$percentage <- round((species_counts$barcodes/species_counts$count)*100,0)
+```
+
+```{r summarize detection}
+
+# Make a column indicating whether a species was detected in our study
+#Mads_table$detected <- ifelse(Mads_table$Scientific_name_arterdk %in% Sp_list$final_id_curated, "yes", "no")
+Mads_table$detected <- apply(Mads_table[, 2:13], 1, function(row) any(row %in% Sp_list$final_id_curated))
+
+# Make a column indicating whether a species has a BOLD barcode and was also detected
+Mads_table$det_cov <- ifelse(Mads_table$detected == "TRUE" & Mads_table$BOLD_barcode == "x", "yes", "no")
+
+# Count no. of detected species per phylum
+det_counts <- Mads_table %>% group_by(Phylum) %>% summarize(
+      count = length(Phylum[detected=="TRUE"]))
+
+# Count no. of detected species per phylum with a BOLD barcode
+det_cov_counts <- Mads_table %>% group_by(Phylum) %>% summarize(
+      count = length(Phylum[det_cov=="yes"]))
+
+# Combine tables
+species_counts$det <- det_counts$count[match(species_counts$Phylum,det_counts$Phylum)]
+species_counts$det_cov <- det_cov_counts$count[match(species_counts$Phylum,det_cov_counts$Phylum)]
+
+write.table(species_counts,"../../Tekstfiler/COI/COI_97/Table_S5.tsv",sep="\t",row.names = T)
+```
+

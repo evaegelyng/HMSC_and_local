@@ -1,0 +1,997 @@
+---
+title: "maps_asvs"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-04-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.path = "images/")
+```
+
+```{r libraries, message=FALSE}
+library(crosstalk)
+library(leaflet)
+library(tidyverse)
+library(magrittr)
+library(phyloseq)
+library(dplyr)
+library(htmltools)
+library(ggplot2)
+library(vegan)
+library(gridExtra)
+library(leaflet.minicharts)
+library(leaflegend)
+library(RColorBrewer)
+library(ggpmisc)
+library(mapview)
+#webshot::install_phantomjs()
+library(MASS)
+library(lme4)
+library(car)
+library(png)
+library(patchwork)
+```
+
+```{r load data, echo=FALSE}
+
+# Import phyloseq object
+COSQ_rare2<-readRDS("../../../RDS/COSQ_rare2_ASV_250512.rds")
+COSQ_rare2
+
+# Extract ASV table
+asv_final<-data.frame(otu_table(COSQ_rare2),check.names=F)
+
+# Extract sample info
+meta<-data.frame(sample_data(COSQ_rare2), check.names=F)
+meta$sample<-factor(substr(row.names(meta),
+                          1,
+                          nchar(row.names(meta))-1))
+
+# Import metadata file with geo coordinates
+coord<-read.table("../../../Tekstfiler/Across_barcodes/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+# Import MOTU information
+otu_tab<-read.table("../../../Tekstfiler/COI/COI_ASV/COSQ_final_ASV.tsv", sep="\t", header=T, check.names=F)
+row.names(otu_tab)<-otu_tab$id
+```
+
+```{r filter reps}
+
+# Add sample names (one name per three sample replicates)
+asv_final$sample<-factor(substr(row.names(asv_final),
+                          1,
+                          nchar(row.names(asv_final))-1))
+# Identify samples with only one or two biol. replicates
+biol_reps<-asv_final %>% group_by(sample) %>% summarise(n=n())
+
+# Identify samples with 3 replicates
+three_reps<-filter(biol_reps,n=="3")
+length(unique(asv_final$sample))
+#245
+
+# Select only samples with 3 replicates
+asv_final<-asv_final[asv_final$sample %in% three_reps$sample, ]
+length(unique(asv_final$sample))
+#212
+meta<-meta[meta$sample %in% three_reps$sample, ]
+length(unique(meta$sample))
+#212
+```
+
+```{r new phyloseq}
+
+asv_final<-within(asv_final,rm(sample))
+## Transform to a matrix
+asv_m <- as.matrix(asv_final) 
+
+## Construct phyloseq OTU table and metadata
+ASV = otu_table(asv_m,taxa_are_rows=FALSE) 
+samples = sample_data(meta)
+
+## Combine metadata and OTU table into one experiment-level phyloseq object
+COSQ_final <- phyloseq(ASV,samples) 
+
+## Remove ASVs from phyloseq object, that are no longer represented in any samples
+COSQ_final <- filter_taxa(COSQ_final, function(x) sum(x) > 0, TRUE)
+COSQ_final
+```
+
+```{r counts}
+
+# Count total remaining reads
+final.tab<-data.frame(otu_table(COSQ_final), check.names=F)
+sum(rowSums(final.tab))
+
+# Count no. of remaining MOTUs
+final.tab.t<-as.data.frame(t(final.tab))
+final.tab.t$motu<-otu_tab$motu[match(row.names(final.tab.t),row.names(otu_tab))]
+length(unique(final.tab.t$motu))
+```
+
+## First look on the read counts per sample
+```{r read count}
+
+hist(rowSums(asv_final),
+     breaks=10,xlab="Reads",main="Number of reads per sample")
+
+hist(sqrt(rowSums(asv_final)),
+     breaks=10,xlab="Reads",main="Number of reads per sample (sqrt-transformed)")
+```
+
+## ASV count per sample
+```{r asv count}
+
+presence = asv_final > 0
+hist(rowSums(presence),
+     breaks=20,xlab="ASVs",main="Number of ASVs per sample")
+     
+hist(log10(rowSums(presence)),
+     breaks=20,xlab="Log(ASVs)",main="Number of ASVs per sample (log-transformed)")
+
+quantile(rowSums(presence))
+```
+
+## ASVs as a function of reads
+```{r asvs reads}
+
+reads<-rowSums(asv_final)
+asvs<-rowSums(presence)
+plot(sqrt(reads), log(asvs), xlab="sqrt(Reads)",ylab="log(ASVs)",main="")
+abline(lm(log(asvs) ~ sqrt(reads)),col="blue")
+```
+
+```{r asv accum, warning=FALSE}
+
+asv_final_t<-t(asv_final)
+## Load taxonomic information
+classified<-read.table("../../../Tekstfiler/COI/COI_97/Supplementary_table_A.txt",sep="\t", header=T, check.names=F)
+
+## Add final taxonomic IDs to ASV table
+asv_final_motu<-merge(asv_final_t,otu_tab[,c("motu","id")],by="row.names")
+asv_final_motu$final.id<-classified$final_id_curated[match(asv_final_motu$motu,classified$seq_id)]
+## Remove forward slashes in taxonomic identifications
+asv_final_motu<-as.data.frame(apply(asv_final_motu,2, function(x) gsub("/","_",x)))
+row.names(asv_final_motu)<-asv_final_motu$Row.names
+
+## Remove unnecessary columns and change back to numeric format
+asv_acc<-within(asv_final_motu,rm("Row.names","id","motu"))
+n<-ncol(asv_acc)
+asv_acc[,1:(n-1)]<-apply(asv_acc[,1:(n-1)], 2, function(x) as.numeric(x))
+
+# Calculate number of positive samples per species
+## Aggregate ASVs from the same species, counting number of ASVs
+spec_agg3<-aggregate(. ~ final.id, asv_acc, function(x) sum(x > 0, na.rm = TRUE))
+row.names(spec_agg3)<-spec_agg3$final.id
+spec_agg3<-within(spec_agg3,rm(final.id))
+
+## Remove species with only 1 ASV
+above.one<-rowSums(spec_agg3>1)>0
+spec_agg4<-spec_agg3[above.one,]
+
+## Count no. of reads left
+## First, aggregate ASVs from the same species, counting number of reads
+spec_agg5<-aggregate(. ~ final.id, asv_acc, function(x) sum(x))
+row.names(spec_agg5)<-spec_agg5$final.id
+spec_agg5<-within(spec_agg5,rm(final.id))
+## Remove species with only 1 ASV
+spec_agg6<-spec_agg5[above.one,]
+sum(rowSums(spec_agg6))
+
+## Count no. of ASVs left
+asv_acc_clean<-asv_acc[rowSums(asv_acc[1:(ncol(asv_acc)-1)])>0,] # Remove empty species
+no_sing<-asv_acc_clean[asv_acc_clean$final.id %in% names(above.one)[above.one],]
+nrow(no_sing)
+
+num_samples<-rowSums(spec_agg4>0, na.rm=TRUE)
+num_sam_df<-as.data.frame(num_samples)
+num_sam_df$final.id<-names(num_samples)
+
+min2<-num_sam_df[which(num_sam_df$num_samples>1),]
+
+# Make barplot of number of positive samples per species (only species present in at least 100 sample replicates)
+min100<-num_sam_df[which(num_sam_df$num_samples>=100),]
+ggplot(min100,aes(x=reorder(final.id,num_samples),y=num_samples,fill=final.id)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ theme(legend.position = "none") + labs(x="",y="Number of samples")
+
+sat_tabs<-list()
+reads<-c()
+
+for (i in min2$final.id) {
+    subset<-subset(asv_acc,final.id==i)
+    sub<-within(subset,rm(final.id))
+    sub_t<-as.data.frame(t(sub))
+    sub_pos<-sub_t[rowSums(sub_t[])>0,] # Remove empty samples
+    sub_pos$sample<-factor(substr(row.names(sub_pos),
+                          1,
+                          nchar(row.names(sub_pos))-1))
+    reps<-sub_pos %>% group_by(sample) %>% summarise(n=n()) 
+    if(max(reps$n)>1){
+      mult_reps<-filter(reps,n>"1") #Select only samples with at least 2 replicates
+      sub_mult<-sub_pos[sub_pos$sample %in% mult_reps$sample, ]
+      #Prepare vector with species name as first value
+      sat<-paste(i,"_sat_samples",sep="")
+    
+      for (j in unique(sub_mult$sample)) {
+        select<-subset(sub_mult,sample==j)
+        n<-ncol(select)
+        model<-specaccum(select[1:(n-1)],method="exact")
+        n_reps<-nrow(select)
+        if(n_reps==2){
+          if(model$richness[2]==model$richness[1] | model$richness[2]<=(model$richness[1]+model$sd[1])){
+          sat <- c(sat,j)
+          }
+        }
+        if(n_reps==3 & model$sd[2]!="NaN"){
+          if(model$richness[3]==model$richness[2] | model$richness[3]<=(model$richness[2]+model$sd[2])){
+          sat <- c(sat,j)
+          }
+        }
+      }
+    
+      if(length(sat)>1){    
+    # Subset ASV table to saturated samples
+    sat_tab<-sub_mult[sub_mult$sample %in% sat,]
+    # Count reads left
+    n<-ncol(sat_tab)
+    reads[i]<-sum(rowSums(sat_tab[,-n]))
+    # Transform read counts to relative read proportions
+    sat_prop<-sat_tab
+    sat_prop<-cbind(sat_prop[,-n]/rowSums(sat_prop[,-n]),sample = sat_prop[, n])
+    # Aggregate replicate samples, taking the mean of read proportions
+    sat_agg<-aggregate(. ~ sample, sat_prop, function(x) mean(x))
+    row.names(sat_agg)<-sat_agg$sample
+    sat_agg<-within(sat_agg,rm(sample))
+    # If there is more than one sample and more than one ASV, save to list 
+        if(sum(sat_agg[,]>0)>1 & sum(colSums(sat_agg[])>0)>1){
+        sat_agg<-sat_agg[,colSums(sat_agg[])>0]
+        sat_tabs[[i]]<-sat_agg
+        }
+      }
+    }
+}
+
+# Count total ASVs
+sum(unlist(lapply(sat_tabs, ncol)))
+
+# Count total reads
+sum(reads)
+```
+
+```{r aggregate}
+
+asv_final$sample<-factor(substr(row.names(asv_final),
+                          1,
+                          nchar(row.names(asv_final))-1))
+
+## Aggregate replicate samples, taking the sum of reads per ASV
+asv_agg<-aggregate(. ~ sample, asv_final, function(x) sum(x, na.rm = TRUE))
+```
+
+```{r taxonomy}
+
+row.names(asv_agg)<-asv_agg$sample
+asv_agg<-within(asv_agg,rm("sample"))
+asv_agg_t<-t(asv_agg)
+
+# Add taxonomy to ASV table
+asv_agg_motu<-merge(asv_agg_t,otu_tab[,c("motu","id")],by="row.names")
+asv_agg_motu$phylum<-classified$new_phylum[match(asv_agg_motu$motu,classified$seq_id)]
+asv_agg_motu$final.id<-classified$final_id_curated[match(asv_agg_motu$motu,classified$seq_id)]
+row.names(asv_agg_motu)<-asv_agg_motu$Row.names
+asv_map<-within(asv_agg_motu,rm("Row.names","id","motu"))
+```
+
+```{r asvs per species, echo=FALSE}
+
+## Aggregate ASVs from the same species, counting number of ASVs
+spec_agg<-aggregate(. ~ final.id + phylum, asv_map, function(x) sum(x > 0, na.rm = TRUE))
+
+## Set zeros to NA
+spec_agg[spec_agg == 0] <- NA
+
+## Calculate mean no. of ASVs per species
+n<-ncol(spec_agg)
+asvs_spec<-colMeans(spec_agg[,3:n],na.rm=TRUE)
+
+## Calculate no. of species per sample
+num_spec<-within(spec_agg,rm(phylum,final.id))
+num_spec[num_spec > 0] <- 1
+num_spec<-colSums(num_spec[,],na.rm=TRUE)
+
+## Aggregate species from the same phylum, calculating mean number of ASVs
+spec_agg<-within(spec_agg,rm(final.id))
+
+phylum_agg<-group_by(spec_agg,phylum) %>% summarise(across(everything(), \(x) mean(x, na.rm = TRUE)))
+phylum_agg<-as.data.frame(phylum_agg)
+row.names(phylum_agg)<-phylum_agg$phylum
+phylum_agg<-within(phylum_agg,rm(phylum))
+phylum_t<-t(phylum_agg)
+
+## Add column with total number of phyla per cluster, and previously produced column of mean no. ASVs across phyla
+phylum_count<-phylum_t %>%
+    is_greater_than(0) %>% 
+    rowSums(na.rm=TRUE) %>%
+    bind_cols(phylum_t, num_phyla = ., mean_asv = asvs_spec, num_spec = num_spec)
+
+phylum_count$mean_asv<-round(phylum_count$mean_asv,2)
+
+phylum_final<-as.data.frame(phylum_count)
+row.names(phylum_final)<-row.names(phylum_t)
+```
+
+```{r species reads}
+
+## Aggregate ASVs from the same species, counting number of reads
+spec_agg2<-aggregate(. ~ final.id + phylum, asv_map, function(x) sum(x, na.rm = TRUE))
+spec_agg2<-within(spec_agg2,rm(phylum,final.id))
+
+presence2 = spec_agg2 > 0
+
+reads<-colSums(spec_agg2)
+species<-colSums(presence2)
+
+hist(log10(species),
+     breaks=20,xlab="Log(species)",main="Number of species per sample (log-transformed)")
+hist(sqrt(reads),
+     breaks=20,xlab="sqrt(reads)",main="Number of reads per sample (sqrt-transformed)")
+
+plot(sqrt(reads), log(species), xlab="sqrt(Reads)",ylab="log(Species)",main="")
+abline(lm(log(species) ~ sqrt(reads)),col="blue")
+```
+
+```{r barplots}
+
+num_asvs<-asv_map %>% group_by(phylum) %>% summarise(n=n())
+num_asvs_sp<-asv_map %>% group_by(final.id) %>% summarise(n=n())
+num_species<-spec_agg %>% group_by(phylum) %>% summarise(n=n())
+
+# Make barplot of number of species per phylum
+ggplot(num_species,aes(x=reorder(phylum,n),y=n,fill=phylum)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ theme(legend.position = "none") + labs(x="",y="Number of species")
+
+# Make barplot of number of ASVs per species, incl. only species with >40 ASVs (clear drop in ASV abundances per species below 40 ASVs)
+bar_sp<-num_asvs_sp[num_asvs_sp$n>40,]
+other<-num_asvs_sp[num_asvs_sp$n<40,]
+num_asvs_abun<-bar_sp %>% add_row(final.id = "Other", n = sum(other$n))
+final.ids<-asv_map[,c("phylum","final.id")] %>% distinct() %>% arrange(.,final.id)
+num_asvs_abun$phylum<-asv_map$phylum[match(num_asvs_abun$final.id,asv_map$final.id)]
+
+ggplot(num_asvs_abun,aes(x=reorder(final.id,n),y=n,fill=final.id)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme(legend.position = "none") + labs(x="",y="Number of ASVs") + theme(axis.text = element_text(size = 10)) + theme(plot.margin = margin(1,1,1.5,1.2, "cm"))
+
+# Make barplot of number of ASVs per phylum
+ggplot(num_asvs,aes(x=reorder(phylum,n),y=n,fill=phylum)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ theme(legend.position = "none") + labs(x="",y="Number of ASVs")
+```
+
+```{r add metadata, echo=FALSE}
+
+## Add new sample names used in coord
+meta$new_name<-paste(meta$season,"_",meta$cluster,"_",meta$habitat,sep="")
+
+meta2<-within(meta,rm("field_replicate","over_median","root"))
+meta_d<-meta2 %>% distinct()
+row.names(meta_d)<-meta_d$sample
+meta_d<-within(meta_d,rm("sample"))
+meta_d$Latitude<-coord$Latitude[match(meta_d$new_name,row.names(coord))]
+meta_d$Longitude<-coord$Longitude[match(meta_d$new_name,row.names(coord))]
+
+## Add metadata to ASV richness table
+phylum_meta<-merge(phylum_final,meta_d[,c("Latitude","Longitude","cluster","habitat","season","substrate_type")],by="row.names") 
+row.names(phylum_meta)<-phylum_meta$Row.names
+phylum_meta<-within(phylum_meta,rm(Row.names))
+```
+
+```{r prepare data}
+
+## Subset metadata to spring season to get unique coordinates per cluster+habitat
+coord_sr<-coord[which(coord$season=="spring" & coord$habitat=="rocks"),]
+
+# Replace forward slashes in taxonomic identifications
+classified2<-as.data.frame(apply(classified,2, function(x) gsub("/","_",x)))
+
+# Add phylum information to table of species with min. 100 positive replicate samples
+min2$phylum<-classified2$phylum[match(min2$final.id,classified2$final.id)]
+```
+
+```{r prepare maps}
+
+# Make lists for map of mean ASV richness across species
+sed_map<-list()
+wat_map<-list()
+
+# Make lists for Djost analysis and species-specific analyses (exclude species found in only 1 cluster or with only 1 ASV) 
+all_sed<-list()
+all_wat<-list()
+
+for (i in names(sat_tabs)) {
+tab<-sat_tabs[[i]]
+tab_meta<-merge(tab,meta_d[,c("cluster","substrate_type")],by="row.names") 
+row.names(tab_meta)<-tab_meta$Row.names
+tab_meta<-within(tab_meta,rm(Row.names))
+
+# create new column for matching
+tab_meta$c_sub <- paste0(tab_meta$cluster, "_", tab_meta$substrate_type)
+
+## Aggregate samples from the same cluster of the same substrate type, outputting mean read proportion
+tab_agg<-aggregate(. ~ cluster + substrate_type + c_sub, tab_meta, function(x) mean(x, na.rm = TRUE))
+n<-ncol(tab_agg)
+## Add number of ASVs per cluster as a column
+tab_agg$asvs<-rowSums(tab_agg[,3:n]>0)
+
+# subset data to sediment and water samples, respectively
+sediment<-tab_agg[tab_agg$substrate_type=="sediment",]
+water<-tab_agg[tab_agg$substrate_type=="water",]
+
+## Add number of ASVs per cluster as a column
+s.cols<-ncol(sediment)
+w.cols<-ncol(water)
+sediment$asvs<-rowSums(sediment[,4:(s.cols-1)]>0)
+water$asvs<-rowSums(water[,4:(w.cols-1)]>0)
+
+## Calculate number of samples aggregated for each sample
+sams<-tab_meta %>% group_by(c_sub) %>% summarise(n=n())
+
+if(nrow(sediment)>0){
+  # Remove empty columns (ASVs)
+  s.cols<-ncol(sediment)
+  empty<-sediment[,4:(s.cols-1)][colSums(sediment[,4:(s.cols-1)])==0]
+  sediment<-sediment[,!(names(sediment) %in% names(empty))]
+  sediment$n_samples<-sams$n[match(sediment$c_sub,sams$c_sub)]
+  
+  # Remove empty rows (samples)
+  sediment<-sediment[sediment$asvs!=0,]
+  
+  # Save non-empty tables to list object
+  if (nrow(sediment)>0){
+  sed_map[[i]]<-sediment
+  }
+  
+  # Save tables with more than 1 ASV and more than 1 cluster to list object
+  if (ncol(sediment)>6 & nrow(sediment)>1){
+    all_sed[[i]]<-sediment
+  }
+}
+
+if(nrow(water)>0){
+  # Remove empty columns (ASVs)
+  w.cols<-ncol(water)
+  empty<-water[,4:(w.cols-1)][colSums(water[,4:(w.cols-1)])==0]
+  water<-water[,!(names(water) %in% names(empty))]
+  water$n_samples<-sams$n[match(water$c_sub,sams$c_sub)]
+    
+  # Remove empty rows (samples)
+  water<-water[water$asvs!=0,]
+
+  # Save non-empty tables to list object
+  if (nrow(water)>0){
+  wat_map[[i]]<-water
+  }
+  
+  # Save tables with more than 1 ASV and more than 1 cluster to list object
+  if (ncol(water)>6 & nrow(water)>1){
+    all_wat[[i]]<-water
+  }
+}
+
+}
+```
+
+```{r prepare for hap networks}
+
+#https://bootstrappers.umassmed.edu/guides/main/r_writeFasta.html
+writeFasta<-function(data, filename){
+  fastaLines = c()
+  for (rowNum in 1:nrow(data)){
+    fastaLines = c(fastaLines, as.character(paste(">", data[rowNum,"name"], sep = "")))
+    fastaLines = c(fastaLines,as.character(data[rowNum,"seq"]))
+  }
+  fileConn<-file(filename)
+  writeLines(fastaLines, fileConn)
+  close(fileConn)
+}
+
+for (k in names(all_sed)){
+  raw<-all_sed[[k]]
+  row.names(raw)<-raw$c_sub
+  trim<-within(raw,rm(cluster,substrate_type,c_sub,asvs,n_samples))
+  trim_t<-as.data.frame(t(trim))
+  trim_t$seq<-otu_tab$seq_data[match(row.names(trim_t),otu_tab$id)]
+  cols<-ncol(trim_t)
+  sums<-rowSums(trim_t[1:(cols-1)]>0)
+
+  # Determine number of positive values (observations)
+  obs<-sum(sums)
+  # Create empty table to be converted to fasta
+  columns = c("name","seq") 
+  fasta = data.frame(matrix(nrow = obs, ncol = length(columns))) 
+  colnames(fasta) = columns
+  i=1
+  
+  for (col in colnames(trim_t[1:(cols-1)])){
+    for (row in row.names(trim_t)){
+      if(trim_t[row,col]>0){
+        fasta[i,]$name<-paste(row,col, sep=" ")
+        fasta[i,]$seq<-trim_t[row,]$seq
+        i=i+1
+      }
+    }
+  }
+  writeFasta(fasta,paste('../../../Tekstfiler/COI/COI_ASV/fastafiler/',k,"_sed.fasta",sep=""))
+}
+
+for (l in names(all_wat)){
+  raw<-all_wat[[l]]
+  row.names(raw)<-raw$c_sub
+  trim<-within(raw,rm(cluster,substrate_type,c_sub,asvs,n_samples))
+  trim_t<-as.data.frame(t(trim))
+  trim_t$seq<-otu_tab$seq_data[match(row.names(trim_t),otu_tab$id)]
+  cols<-ncol(trim_t)
+  #Determine number of positive values (observations)
+  sums<-rowSums(trim_t[1:(cols-1)]>0)
+  obs<-sum(sums)
+  #Create empty table to be converted to fasta
+  columns = c("name","seq") 
+  fasta = data.frame(matrix(nrow = obs, ncol = length(columns))) 
+  colnames(fasta) = columns
+  i=1
+  
+  for (col in colnames(trim_t[1:(cols-1)])){
+    for (row in row.names(trim_t)){
+      if(trim_t[row,col]>0){
+        fasta[i,]$name<-paste(row,col, sep=" ")
+        fasta[i,]$seq<-trim_t[row,]$seq
+        i=i+1
+      }
+    }
+  }
+  writeFasta(fasta,paste('../../../Tekstfiler/COI/COI_ASV/fastafiler/',l,"_wat.fasta",sep=""))
+}
+
+#Write species names to files - needed for haplotype networks
+write(names(all_wat),file="../../../Tekstfiler/COI/COI_ASV/species_water.tsv")
+write(names(all_sed),file="../../../Tekstfiler/COI/COI_ASV/species_sed.tsv")
+```
+
+```{r merge species}
+
+all_sed2<-list()
+
+for (k in names(all_sed)){
+  
+  sed1<-all_sed[[k]]
+  sed2<-within(sed1,rm(cluster,substrate_type,asvs, n_samples))
+  all_sed2[[k]]<-sed2
+}
+
+sed2_merge<-all_sed2%>% reduce(full_join, by = "c_sub")
+
+# Set row names
+row.names(sed2_merge)<-lapply(sed2_merge$c_sub, function(x) gsub("_sediment","",x))
+row.names(sed2_merge)<-paste("sediment_",row.names(sed2_merge),sep="")
+sed2_merge<-within(sed2_merge,rm(c_sub))
+
+# Replace NAs with zero and remove empty colums
+sed2_merge[is.na(sed2_merge)] <- 0
+sed2_merge<-sed2_merge[colSums(sed2_merge)>0]
+
+# Transpose table and add final taxonomic IDs
+sed2_t<-as.data.frame(t(sed2_merge))
+sed2_t$final.id<-asv_agg_motu$final.id[match(row.names(sed2_t),row.names(asv_agg_motu))]
+
+# Replace forward slashes in taxonomic identifications
+sed2_final<-as.data.frame(apply(sed2_t,2, function(x) gsub("/","_",x)))
+
+# Add column with sequence ids
+sed2_final$id <- row.names(sed2_final)
+
+# Move sequence id to be the first column
+sed2_final <- sed2_final %>% relocate(id)
+
+# Move final id to be the first column
+sed2_final <- sed2_final %>% relocate(final.id)
+
+write.table(sed2_final, file='../../../Tekstfiler/COI/COI_ASV/sed_ASVs_250512.txt', quote=FALSE, sep='\t', row.names=TRUE)
+
+all_wat2<-list()
+
+for (k in names(all_wat)){
+  
+  wat1<-all_wat[[k]]
+  wat2<-within(wat1,rm(cluster,substrate_type,asvs, n_samples))
+  all_wat2[[k]]<-wat2
+}
+
+wat2_merge<-all_wat2%>% reduce(full_join, by = "c_sub")
+
+# Set row names
+row.names(wat2_merge)<-lapply(wat2_merge$c_sub, function(x) gsub("_water","",x))
+row.names(wat2_merge)<-paste("water_",row.names(wat2_merge),sep="")
+wat2_merge<-within(wat2_merge,rm(c_sub))
+
+# Replace NAs with zero and remove empty colums
+wat2_merge[is.na(wat2_merge)] <- 0
+wat2_merge<-wat2_merge[colSums(wat2_merge)>0]
+
+# Transpose table and add final taxonomic IDs
+wat2_t<-as.data.frame(t(wat2_merge))
+wat2_t$final.id<-asv_agg_motu$final.id[match(row.names(wat2_t),row.names(asv_agg_motu))]
+
+# Replace forward slashes in taxonomic identifications
+wat2_final<-as.data.frame(apply(wat2_t,2, function(x) gsub("/","_",x)))
+
+# Add column with sequence ids
+wat2_final$id <- row.names(wat2_final)
+
+# Move sequence id to be the first column
+wat2_final <- wat2_final %>% relocate(id)
+
+# Move final id to be the first column
+wat2_final <- wat2_final %>% relocate(final.id)
+
+write.table(wat2_final, file='../../../Tekstfiler/COI/COI_ASV/wat_ASVs_250512.txt', quote=FALSE, sep='\t', row.names=TRUE)
+```
+
+```{r phylum rank sed}
+
+all_sed3<-list()
+
+for (k in names(sed_map)){
+  
+  sed3<-sed_map[[k]]
+  names(sed3)[names(sed3) == "asvs"] <- paste(k,"_asvs",sep="")
+  n<-ncol(sed3)
+  sed4<-sed3[,c(1,n-1)]
+  all_sed3[[k]]<-sed4
+}
+
+merge<-all_sed3%>% reduce(full_join, by = "cluster")
+sed3_merge<-merge
+names(sed3_merge)<-lapply(names(sed3_merge), function(x) gsub("_asvs","",x))
+```
+
+```{r phylum rank wat}
+
+all_wat3<-list()
+
+for (k in names(wat_map)){
+  
+  wat3<-wat_map[[k]]
+  names(wat3)[names(wat3) == "asvs"] <- paste(k,"_asvs",sep="")
+  n<-ncol(wat3)
+  wat4<-wat3[,c(1,n-1)]
+  all_wat3[[k]]<-wat4
+}
+
+merge_w<-all_wat3%>% reduce(full_join, by = "cluster")
+wat3_merge<-merge_w
+names(wat3_merge)<-lapply(names(wat3_merge), function(x) gsub("_asvs","",x))
+```
+
+```{r richness maps sed}
+
+## Select only species detected in at least 10 clusters
+min_10_sed<-list()
+
+for (k in names(all_sed)){
+  
+  if(nrow(all_sed[[k]])>=10){
+    min_10_sed[[k]]<-all_sed[[k]]
+  }
+}
+
+## Make empty list for storing maps
+sed_maps<-list()
+
+for (k in names(min_10_sed)){
+
+  ## Add coordinates from metadata to ASV table
+  min_10_sed[[k]]$Latitude<-coord_sr$Latitude[match(min_10_sed[[k]]$cluster,coord_sr$cluster)]
+  min_10_sed[[k]]$Longitude<-coord_sr$Longitude[match(min_10_sed[[k]]$cluster,coord_sr$cluster)]
+
+  numPal <- colorNumeric("YlOrRd", min_10_sed[[k]]$asvs)
+
+  sed_maps[[k]] <- leaflet(min_10_sed[[k]], width = "100%", height = 300) %>%
+  addTiles() %>%
+  addSymbolsSize(values = ~8000,
+                 lat = ~Latitude, 
+                 lng = ~Longitude,
+                 shape = 'circle',
+                 color = 'black',
+                 fillColor = ~numPal(asvs),
+                 opacity = .8,
+                 baseSize = 10) %>%
+  addLegendNumeric(
+    pal = numPal, 
+    title = paste(k,sep=""),
+    shape = 'stadium',
+    values = min_10_sed[[k]]$asvs, 
+    fillOpacity = .5,
+    decreasing = TRUE,
+    position = 'topright') %>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+}
+
+leaflet_grid <- 
+  tagList(
+    tags$table(width = "100%",
+      tags$tr(
+        tags$td(sed_maps[[1]]),
+        tags$td(sed_maps[[2]]),
+        tags$td(sed_maps[[3]])
+      ),
+      tags$tr(
+        tags$td(sed_maps[[4]]),
+        tags$td(sed_maps[[5]]),
+        tags$td(sed_maps[[6]]),
+      ),
+      tags$tr(
+        tags$td(sed_maps[[7]]),
+        tags$td(sed_maps[[8]]),
+        tags$td(sed_maps[[9]]),
+      ),
+      tags$tr(
+        tags$td(sed_maps[[10]]),
+        tags$td(sed_maps[[11]]),
+        tags$td(sed_maps[[12]]),
+      )  
+    )
+  )
+
+browsable(leaflet_grid)
+
+leaflet_grid2 <- 
+  tagList(
+    tags$table(width = "100%",
+      tags$tr(
+        tags$td(sed_maps[[13]]),
+        tags$td(sed_maps[[14]]),
+        tags$td(sed_maps[[15]])
+      ),
+      tags$tr(
+        tags$td(sed_maps[[16]]),
+        tags$td(sed_maps[[17]]),
+        tags$td(sed_maps[[18]])
+      ),
+      tags$tr(
+        tags$td(sed_maps[[19]])
+      ) 
+    )
+  )
+
+browsable(leaflet_grid2)
+```
+
+```{r richness maps wat}
+
+min_10_wat<-list()
+
+for (l in names(all_wat)){
+  
+  if(nrow(all_wat[[l]])>=10){
+    min_10_wat[[l]]<-all_wat[[l]]
+  }
+}
+
+wat_maps<-list()
+
+for (k in names(min_10_wat)){
+  
+  ## Add coordinates from metadata to ASV table
+  min_10_wat[[k]]$Latitude<-coord_sr$Latitude[match(min_10_wat[[k]]$cluster,coord_sr$cluster)]
+  min_10_wat[[k]]$Longitude<-coord_sr$Longitude[match(min_10_wat[[k]]$cluster,coord_sr$cluster)]
+
+  numPal <- colorNumeric("YlOrRd", min_10_wat[[k]]$asvs)
+
+  wat_maps[[k]] <- leaflet(min_10_wat[[k]], width = "100%", height = 300) %>%
+  addTiles() %>%
+  addSymbolsSize(values = ~8000,
+                 lat = ~Latitude, 
+                 lng = ~Longitude,
+                 shape = 'circle',
+                 color = 'black',
+                 fillColor = ~numPal(asvs),
+                 opacity = .8,
+                 baseSize = 10) %>%
+  addLegendNumeric(
+    pal = numPal, 
+    title = paste(k,sep=""),
+    shape = 'stadium',
+    values = min_10_wat[[k]]$asvs, 
+    fillOpacity = .5,
+    decreasing = TRUE,
+    position = 'topright') %>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+}
+
+length(wat_maps)
+
+leaflet_grid <- 
+  tagList(
+    tags$table(width = "100%",
+      tags$tr(
+        tags$td(wat_maps[[1]]),
+        tags$td(wat_maps[[2]]),
+        tags$td(wat_maps[[3]])
+      ),
+      tags$tr(
+        tags$td(wat_maps[[4]]),
+        tags$td(wat_maps[[5]]),
+        tags$td(wat_maps[[6]]),
+      ),
+      tags$tr(
+        tags$td(wat_maps[[7]]),
+        tags$td(wat_maps[[8]]),
+        tags$td(wat_maps[[9]]),
+      ),
+      tags$tr(
+        tags$td(wat_maps[[10]]),
+        tags$td(wat_maps[[11]]),
+        tags$td(wat_maps[[12]]),
+      )  
+    )
+  )
+
+browsable(leaflet_grid)
+
+leaflet_grid2 <- 
+  tagList(
+    tags$table(width = "100%",
+      tags$tr(
+        tags$td(wat_maps[[13]]),
+        tags$td(wat_maps[[14]]),
+        tags$td(wat_maps[[15]])
+      ),
+      tags$tr(
+        tags$td(wat_maps[[16]]),
+        tags$td(wat_maps[[17]]),
+        tags$td(wat_maps[[18]])
+      ),
+      tags$tr(
+        tags$td(wat_maps[[19]]),
+        tags$td(wat_maps[[20]]),
+        tags$td(wat_maps[[21]])
+      ) ,
+      tags$tr(
+        tags$td(wat_maps[[22]]),
+        tags$td(wat_maps[[23]]),
+        tags$td(wat_maps[[24]])
+      ),
+      tags$tr(
+        tags$td(wat_maps[[25]])
+      )
+    )
+  )
+
+browsable(leaflet_grid2)
+```
+
+```{r hapmaps sed}
+
+colors <-brewer.pal(6,"Dark2")
+
+for (k in names(min_10_sed)) {
+  
+  tab<-min_10_sed[[k]]
+  
+  m<-ncol(tab)
+  haps_n<-tab[,4:(m-4)] %>% colMeans() %>% sort(decreasing=TRUE)
+  n<-length(haps_n)
+
+  if(n>5){
+    haps_abun<-haps_n[1:5]
+    haps_rare<-haps_n[6:n]
+    abun<-tab[,c("cluster",names(haps_abun))]
+    rare<-tab[,c("cluster",names(haps_rare))]
+
+  if(n==6){
+    Other<-rare[,-1]
+  }
+
+  if(n!=6){
+    Other<-rare[,-1] %>% rowSums 
+  }
+
+  map<-cbind(abun,Other)
+
+  map$Latitude<-coord_sr$Latitude[match(map$cluster,coord_sr$cluster)]
+  map$Longitude<-coord_sr$Longitude[match(map$cluster,coord_sr$cluster)]
+
+  plot <- leaflet(map, width = "100%", height = 600) %>%
+    addTiles() %>%
+    addMinicharts(
+    map$Longitude, map$Latitude,
+    type = "pie",
+    chartdata = map[, 2:7],
+    colorPalette = colors, 
+    width = 30, transitionTime = 0
+  ) %>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+  }
+
+  if(n<=5){
+
+    map<-tab
+
+    map$Latitude<-coord_sr$Latitude[match(map$cluster,coord_sr$cluster)]
+    map$Longitude<-coord_sr$Longitude[match(map$cluster,coord_sr$cluster)]
+
+    plot <- leaflet(map, width = "100%", height = 600) %>%
+    addTiles() %>%
+    addMinicharts(
+    map$Longitude, map$Latitude,
+    type = "pie",
+    chartdata = map[, 4:(n+3)],
+    colorPalette = colors, 
+    width = 30, transitionTime = 0
+  )%>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+  }
+
+  # The below command stopped working
+  mapshot(plot, file = paste("../../../Plots/Kort/Composition_maps/",k,"_sed.png",sep=""))
+}
+```
+
+```{r hapmaps wat}
+
+for (l in names(min_10_wat)) {
+  
+  tab<-min_10_wat[[l]]
+
+  m<-ncol(tab)
+  haps_n<-tab[,4:(m-4)] %>% colMeans() %>% sort(decreasing=TRUE)
+  n<-length(haps_n)
+
+  if(n>5){
+    haps_abun<-haps_n[1:5]
+    haps_rare<-haps_n[6:n]
+    abun<-tab[,c("cluster",names(haps_abun))]
+    rare<-tab[,c("cluster",names(haps_rare))]
+
+  if(n==6){
+    Other<-rare[,-1]
+  }
+
+  if(n!=6){
+    Other<-rare[,-1] %>% rowSums 
+  }
+
+  map<-cbind(abun,Other)
+
+  map$Latitude<-coord_sr$Latitude[match(map$cluster,coord_sr$cluster)]
+  map$Longitude<-coord_sr$Longitude[match(map$cluster,coord_sr$cluster)]
+
+  plot <- leaflet(map, width = "100%", height = 600) %>%
+    addTiles() %>%
+    addMinicharts(
+    map$Longitude, map$Latitude,
+    type = "pie",
+    chartdata = map[, 2:7],
+    colorPalette = colors, 
+    width = 30, transitionTime = 0
+  )%>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+  }
+
+  if(n<=5){
+
+    map<-tab
+
+    map$Latitude<-coord_sr$Latitude[match(map$cluster,coord_sr$cluster)]
+    map$Longitude<-coord_sr$Longitude[match(map$cluster,coord_sr$cluster)]
+
+    plot <- leaflet(map, width = "100%", height = 600) %>%
+    addTiles() %>%
+    addMinicharts(
+    map$Longitude, map$Latitude,
+    type = "pie",
+    chartdata = map[, 4:(n+3)],
+    colorPalette = colors, 
+    width = 30, transitionTime = 0
+  )%>%
+    setView(11.688598945812004, 56.00717750251805, zoom = 6)
+  }
+
+  # The below command stopped working
+  mapshot(plot, file = paste("../Kort/Composition_maps/",l,"_wat.png",sep=""))
+}
+```
+

@@ -1,0 +1,631 @@
+---
+title: "Species-level analyses"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-06-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.path = "images/")
+```
+
+```{r libraries, message=FALSE}
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+library(phyloseq)
+library(Rarity)
+library(VennDiagram)
+#library(ComplexHeatmap)
+library(circlize)
+library(installr)
+```
+
+```{r load species data}
+
+## Get phyloseq object
+COSQ_no_c2 <- readRDS("../RDS/COSQ_rare2_correct_pident97.rds")
+
+## Get OTU table
+sp_97<-data.frame(otu_table(COSQ_no_c2),check.names=F)
+
+## Get taxonomy
+tax1<-data.frame(tax_table(COSQ_no_c2))
+
+## Get metadata
+sam1<-data.frame(sample_data(COSQ_no_c2))
+
+## Get more metadata
+metadata<-read.table("../Tekstfiler/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+#Create extra metadata variables
+sam1$sshc<-paste(sam1$substrate_type, sam1$season, sam1$habitat, sam1$cluster, sep="_")
+##Including the number of field reps per sample
+bio_reps<-sam1 %>% group_by(sshc) %>% summarise(n=n())
+sam1$bio_reps<-bio_reps$n[match(sam1$sshc,bio_reps$sshc)]
+```
+
+```{r final filtering}
+
+#Aggregate MOTUs with the same final ID
+tax1<-as.data.frame(apply(tax1,c(1,2),function(x) gsub("/","_",x)))
+sp_97$final.id<-tax1$final.id[match(row.names(sp_97),row.names(tax1))]
+motu_agg<-aggregate(. ~ final.id, sp_97, sum)
+row.names(motu_agg)<-motu_agg$final.id
+motu_agg<-within(motu_agg,rm(final.id))
+
+## Remove unnecessary columns from tax table
+tax.new<-within(tax1,rm(id,species))
+## Remove rows with the same exact classification
+tax.agg1<-tax.new %>% distinct()
+## Remove sp344, which is an incorrect classification of Z. seminascatus
+tax.agg2<-tax.agg1[which(row.names(tax.agg1)!="sp344"),]
+## Now the number of taxa is the same as for the site-species table
+## Set row names to final ID
+row.names(tax.agg2)<-tax.agg2$final.id
+
+###Make phyloseq object
+tax_mat_b<-as.matrix(tax.agg2)
+OTU = otu_table(motu_agg, taxa_are_rows = TRUE)
+TAX_b = tax_table(tax_mat_b)
+p_NCBI = phyloseq(OTU, TAX_b)
+
+##Add metadata
+sampledata = sample_data(data.frame(sam1, row.names=sam1$root, stringsAsFactors=FALSE))
+DADAwang1 = merge_phyloseq(p_NCBI, sampledata)
+DADAwang1 
+
+##Remove cluster 2, which was only sampled in one season
+DADAwang2<-subset_samples(DADAwang1, !cluster==2)
+DADAwang2 # 6 field reps removed
+
+#Select only samples with 3 replicates
+DADAwang3<-subset_samples(DADAwang2, bio_reps==3)
+DADAwang3 # 22 field reps removed
+
+# Merge field replicates
+DT1<-merge_samples(DADAwang3, "sshc", fun = mean)
+
+#Sample data needs to be remade after merging of field replicates
+d<-data.frame(sample_data(DT1)[,c("cluster","season","habitat")])
+#Splits rowname into habitat from third argument
+d$habitat<- sapply(strsplit(as.character(rownames(d)), "_"), function(x) unlist(strsplit(x[3], "_"))[1])
+#Splits rowname into season from second argument
+d$season<- sapply(strsplit(as.character(rownames(d)), "_"), function(x) unlist(strsplit(x[2], "_"))[1])
+d$sshc<-rownames(d)
+d$sch<-paste(d$season,d$cluster,d$habitat,sep="_")
+d$substrate_type<-sampledata$substrate_type[match(rownames(d),sampledata$sshc)]
+
+sample_data(DT1)<-d[,c("sshc","sch","cluster","season","habitat","substrate_type")]
+
+#Export phyloseq object as rds file
+saveRDS(DT1,file="../RDS/COI_97_no_c2_3reps.rds")
+
+## Get cleaned OTU table
+rep_agg<-data.frame(otu_table(DT1),check.names=F)
+
+## Get taxonomy
+tax<-data.frame(tax_table(DT1))
+
+## Get metadata
+sam<-data.frame(sample_data(DT1))
+```
+
+```{r prepare data}
+
+rep_agg$Substrate<-sam$substrate_type[match(row.names(rep_agg),sam$sshc)]
+
+#Subset data to sediment and water
+sed<-rep_agg[rep_agg$Substrate=="sediment",]
+sed<-within(sed,rm(Substrate))
+wat<-rep_agg[rep_agg$Substrate=="water",]
+wat<-within(wat,rm(Substrate))
+
+## Remove empty samples
+sed<-sed[rowSums(sed[])>0,] 
+wat<-wat[rowSums(wat[])>0,] 
+
+# Remove empty colums (species)
+sed<-sed[colSums(sed)>0]
+wat<-wat[colSums(wat)>0]
+
+##Convert to presence/absence
+sed[sed>0]<-1
+wat[wat>0]<-1
+
+# Save to RDS files
+saveRDS(sed,file="../RDS/sed_pres_abs.rds")
+saveRDS(wat,file="../RDS/wat_pres_abs.rds")
+```
+
+```{r venn sed}
+
+# Subset to clusters where all three habitats were sampled
+sam$sc<-paste(sam$season,sam$cluster,sep="_")
+sed$sc<-sam$sc[match(row.names(sed),sam$sshc)]
+length(unique(sed$sc)) # 62
+hab_reps<-sed %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+sed_3hab<-sed[sed$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+sed_3hab$habitat<-sam$habitat[match(row.names(sed_3hab),sam$sshc)]
+
+eel<-sed_3hab[sed_3hab$habitat=="eelgrass",]
+rock<-sed_3hab[sed_3hab$habitat=="rocks",]
+sand<-sed_3hab[sed_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/species_sed.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+df <- data.frame(vec1 = rep(NA, max(sapply(list(eel_sp, rock_sp, sand_sp), length))))
+df[1:length(eel_sp), 1] <- eel_sp
+df[1:length(rock_sp), 2] <- rock_sp
+df[1:length(sand_sp), 3] <- sand_sp
+names(df) <- c("Eelgrass", "Rocks", "Sand")
+
+write.table(df, file="../Tekstfiler/COI_species_sed.tsv",sep="\t")
+
+sed<-within(sed,rm(sc))
+```
+
+```{r venn wat}
+
+# Subset to clusters where all three habitats were sampled
+wat$sc<-sam$sc[match(row.names(wat),sam$sshc)]
+length(unique(wat$sc)) # 62
+hab_reps<-wat %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+wat_3hab<-wat[wat$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+wat_3hab$habitat<-sam$habitat[match(row.names(wat_3hab),sam$sshc)]
+
+eel<-wat_3hab[wat_3hab$habitat=="eelgrass",]
+rock<-wat_3hab[wat_3hab$habitat=="rocks",]
+sand<-wat_3hab[wat_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_sp,rock_sp,sand_sp),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/species_wat.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+df <- data.frame(vec1 = rep(NA, max(sapply(list(eel_sp, rock_sp, sand_sp), length))))
+df[1:length(eel_sp), 1] <- eel_sp
+df[1:length(rock_sp), 2] <- rock_sp
+df[1:length(sand_sp), 3] <- sand_sp
+names(df) <- c("Eelgrass", "Rocks", "Sand")
+
+write.table(df, file="../Tekstfiler/COI_species_wat.tsv",sep="\t")
+
+wat<-within(wat,rm(sc))
+```
+
+```{r venn sed family}
+
+# Collapse species table to family level
+sed_3hab<-within(sed_3hab,rm(sc,habitat))
+sed_3hab_t<-as.data.frame(t(sed_3hab))
+sed_3hab_t<-apply(sed_3hab_t, c(1,2), function(x) as.numeric(x))
+sed_3hab_t<-as.data.frame(sed_3hab_t)
+sed_3hab_t$family<-tax.agg2$family[match(row.names(sed_3hab_t),row.names(tax.agg2))]
+sed_3hab_agg<-aggregate(. ~ family, sed_3hab_t, function(x) sum(x))
+
+# Remove unknown family assignments
+sed_3hab_agg<-subset(sed_3hab_agg,family!="NA")
+row.names(sed_3hab_agg)<-sed_3hab_agg$family
+sed_3hab_agg<-within(sed_3hab_agg,rm(family))
+
+# Subset to each habitat
+sed_3hab_new<-as.data.frame(t(sed_3hab_agg))
+sed_3hab_new$habitat<-sam$habitat[match(row.names(sed_3hab_new),sam$sshc)]
+
+eel<-sed_3hab_new[sed_3hab_new$habitat=="eelgrass",]
+rock<-sed_3hab_new[sed_3hab_new$habitat=="rocks",]
+sand<-sed_3hab_new[sed_3hab_new$habitat=="sand",]
+
+eel<-within(eel,rm(habitat))
+rock<-within(rock,rm(habitat))
+sand<-within(sand,rm(habitat))
+
+# Make family list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_families<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_families<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_families<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_families,rock_families,sand_families),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/family_sed.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+df <- data.frame(vec1 = rep(NA, max(sapply(list(eel_families, rock_families, sand_families), length))))
+df[1:length(eel_families), 1] <- eel_families
+df[1:length(rock_families), 2] <- rock_families
+df[1:length(sand_families), 3] <- sand_families
+names(df) <- c("Eelgrass", "Rocks", "Sand")
+
+write.table(df, file="../Tekstfiler/COI_families_sed.tsv",sep="\t")
+```
+
+```{r venn wat family}
+
+# Collapse species table to family level
+wat_3hab<-within(wat_3hab,rm(sc,habitat))
+wat_3hab_t<-as.data.frame(t(wat_3hab))
+wat_3hab_t<-apply(wat_3hab_t, c(1,2), function(x) as.numeric(x))
+wat_3hab_t<-as.data.frame(wat_3hab_t)
+wat_3hab_t$family<-tax.agg2$family[match(row.names(wat_3hab_t),row.names(tax.agg2))]
+wat_3hab_agg<-aggregate(. ~ family, wat_3hab_t, function(x) sum(x))
+
+# Remove unknown family assignments
+wat_3hab_agg<-subset(wat_3hab_agg,family!="NA")
+row.names(wat_3hab_agg)<-wat_3hab_agg$family
+wat_3hab_agg<-within(wat_3hab_agg,rm(family))
+
+# Subset to each habitat
+wat_3hab_new<-as.data.frame(t(wat_3hab_agg))
+wat_3hab_new$habitat<-sam$habitat[match(row.names(wat_3hab_new),sam$sshc)]
+
+eel<-wat_3hab_new[wat_3hab_new$habitat=="eelgrass",]
+rock<-wat_3hab_new[wat_3hab_new$habitat=="rocks",]
+sand<-wat_3hab_new[wat_3hab_new$habitat=="sand",]
+
+eel<-within(eel,rm(habitat))
+rock<-within(rock,rm(habitat))
+sand<-within(sand,rm(habitat))
+
+# Make family list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_families<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_families<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_families<-colnames(sand)
+
+venn.diagram(
+  x = list(eel_families,rock_families,sand_families),
+  category.names = c("Eelgrass" , "Rocks", "Sand"),
+  lwd = 3,
+  fill = c("yellowgreen", "cornflowerblue","thistle3"),
+  filename = '../Plots/Venn/family_wat.png',
+  cat.cex = 1,
+  cat.fontface = "bold",
+  output=T
+)
+
+df <- data.frame(vec1 = rep(NA, max(sapply(list(eel_families, rock_families, sand_families), length))))
+df[1:length(eel_families), 1] <- eel_families
+df[1:length(rock_families), 2] <- rock_families
+df[1:length(sand_families), 3] <- sand_families
+names(df) <- c("Eelgrass", "Rocks", "Sand")
+
+write.table(df, file="../Tekstfiler/COI_families_wat.tsv",sep="\t")
+```
+
+```{r prepare nmds}
+
+## Subset taxonomy table to each of three dominant kingdoms
+chrom<-tax.agg2[which(tax.agg2$kingdom=="Chromista"),]
+plant<-tax.agg2[which(tax.agg2$kingdom=="Plantae"),]
+metaz<-tax.agg2[which(tax.agg2$kingdom=="Metazoa"),]
+
+## Subset site-species tables to each of these kingdoms
+sed.chrom<-sed[,names(sed) %in% row.names(chrom)]
+sed.chrom<-sed.chrom[rowSums(sed.chrom[])>0,] # Remove empty samples
+sed.plant<-sed[,names(sed) %in% row.names(plant)]
+sed.plant<-sed.plant[rowSums(sed.plant[])>0,] # Remove empty samples
+sed.metaz<-sed[,names(sed) %in% row.names(metaz)]
+sed.metaz<-sed.metaz[rowSums(sed.metaz[])>0,] # Remove empty samples
+
+wat.chrom<-wat[,names(wat) %in% row.names(chrom)]
+wat.chrom<-wat.chrom[rowSums(wat.chrom[])>0,] # Remove empty samples
+wat.plant<-wat[,names(wat) %in% row.names(plant)]
+wat.plant<-wat.plant[rowSums(wat.plant[])>0,] # Remove empty samples
+wat.metaz<-wat[,names(wat) %in% row.names(metaz)]
+wat.metaz<-wat.metaz[rowSums(wat.metaz[])>0,] # Remove empty samples
+```
+
+```{r aggregate samples}
+
+## Remove eelgrass samples for a fair comparison between all clusters
+sed$habitat<-sam$habitat[match(row.names(sed),sam$sshc)]
+sed_rs<-subset(sed,sed$habitat!="eelgrass")
+sed_rs<-within(sed_rs,rm(habitat))
+sed<-within(sed,rm(habitat))
+
+## Remove eelgrass samples for a fair comparison between all clusters
+wat$habitat<-sam$habitat[match(row.names(wat),sam$sshc)]
+wat_rs<-subset(wat,wat$habitat!="eelgrass")
+wat_rs<-within(wat_rs,rm(habitat))
+wat<-within(wat,rm(habitat))
+
+## Aggregate samples from the same cluster
+sed_rs$cluster<-sam$cluster[match(row.names(sed_rs),sam$sshc)]
+
+## Aggregate samples from the same cluster, outputting sum (pres/abs)
+sed_agg<-aggregate(. ~ cluster, sed_rs, function(x) sum(x))
+
+## Set row names to cluster name
+row.names(sed_agg)<-paste("c",sed_agg$cluster,sep="")
+sed_agg<-within(sed_agg,rm(cluster))
+
+## Aggregate samples from the same cluster
+wat_rs$cluster<-sam$cluster[match(row.names(wat_rs),sam$sshc)]
+
+## Aggregate samples from the same cluster, outputting sum (pres/abs)
+wat_agg<-aggregate(. ~ cluster, wat_rs, function(x) sum(x))
+
+## Set row names to cluster name
+row.names(wat_agg)<-paste("c",wat_agg$cluster,sep="")
+wat_agg<-within(wat_agg,rm(cluster))
+```
+
+```{r clustering sed}
+
+##Convert to presence/absence
+sed_agg[sed_agg>0]<-1
+# Remove empty colums (species)
+sed_agg<-sed_agg[colSums(sed_agg)>0]
+##Calculate Raup-Crick dissimilarities
+dist<-vegdist(sed_agg, method="raup", binary=FALSE)
+##Run cluster analysis using average linkage
+fit <- hclust(dist, method="complete") 
+##Plot dendrogram
+png(file="../Plots/Clustering/Hier_clust_sed.png")
+plot(fit,cex=0.8,main="Sediment") # Same result when using average linkage
+dev.off()
+```
+
+```{r clustering wat}
+
+##Convert to presence/absence
+wat_agg[wat_agg>0]<-1
+##Remove empty columns (species)
+wat_agg<-wat_agg[colSums(wat_agg)>0]
+##Calculate Raup-Crick dissimilarities
+dist_w<-vegdist(wat_agg, method="raup", binary=FALSE)
+##Run cluster analysis using average linkage
+fit_w <- hclust(dist_w, method="complete") 
+##Plot dendrogram
+png(file="../Plots/Clustering/Hier_clust_wat.png")
+plot(fit_w,cex=0.8,main="Water") # Same result when using average linkage
+dev.off()
+```
+
+```{r nmds sed new}
+
+#And area names and distances
+sam$Sub_Area<-metadata$Sub_Area[match(sam$cluster,metadata$Cluster)]
+sam$New_Area<-metadata$New_Area[match(sam$cluster,metadata$Cluster)]
+sam$sea_dist<-metadata$dist_from_C33.km[match(sam$cluster,metadata$Cluster)]
+
+datasets<-list(sed,sed.chrom,sed.plant,sed.metaz)
+names<-c("All","Chromista","Plantae","Metazoa")
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+ks<-c(3,3,4,4)
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+plots<-list()
+
+for (i in 1:length(datasets)){
+  
+  set.seed(123)
+  allmds <- metaMDS(datasets[[i]], distance = "jaccard", autotransform = FALSE, maxit=999, k=ks[i], trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$New_Area <- sam$New_Area[match(row.names(site_scrs), sam$sshc)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
+
+  site_scrs$Community <- sam$sshc[match(row.names(site_scrs), sam$sshc)]
+  site_scrs$cluster<-sam$cluster[match(row.names(site_scrs),sam$sshc)]
+  
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
+  geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c("#1B9E77","#E7298A","#A6761D","#666666"),
+                     name = "", breaks = sort(unique(sam$New_Area)),
+                     labels = sort(unique(sam$New_Area))) +
+  geom_point(data = cent, size = 5) +
+  geom_point(alpha=0.4) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))
+
+  plots[[i]]<-nmds_sed
+  write.table(site_scrs,file=paste("../Tekstfiler/Jaccard_sed_4areas",names[[i]],".txt",sep=""))
+}
+```
+
+```{r nmds wat new}
+
+datasets.w<-list(wat,wat.chrom,wat.plant,wat.metaz)
+
+#NB., the number of points n should be n > 2k + 1n>2k+1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+ks<-c(3,3,3,3)
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+plots_wat<-list()
+
+for (i in 1:length(datasets.w)){
+  
+  set.seed(123)
+  allmds <- metaMDS(datasets.w[[i]], distance = "jaccard", autotransform = FALSE, k=ks[i], maxit=999, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$New_Area <- sam$New_Area[match(row.names(site_scrs), sam$sshc)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ New_Area, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("New_Area", "oNMDS1", "oNMDS2")), by = "New_Area", sort=FALSE)
+
+  site_scrs$Community <- sam$sshc[match(row.names(site_scrs), sam$sshc)]
+  site_scrs$cluster<-sam$cluster[match(row.names(site_scrs),sam$sshc)]
+  
+  nmds_wat<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = New_Area)) + 
+  geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = c("#1B9E77","#E7298A","#A6761D","#666666"),
+                     name = "", breaks = sort(unique(sam$New_Area)),
+                     labels = sort(unique(sam$New_Area))) +
+  geom_point(data = cent, size = 5) +
+  geom_point(alpha=0.4) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "right", legend.text = element_text(size = 8), legend.title = element_text(size = 8), axis.text = element_text(size = 6))
+  
+  plots_wat[[i]]<-nmds_wat
+
+  write.table(site_scrs,file=paste("../Tekstfiler/Jaccard_wat_4areas",names[[i]],".txt",sep=""))
+}
+
+  ggsave(file="../Plots/NMDS/NMDS_97_both_4areas_All.png",ggarrange(plots[[1]],plots_wat[[1]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="right"))
+  
+  ggsave(file="../Plots/NMDS/NMDS_97_both_4areas_kingdoms.png",ggarrange(plots[[2]],plots_wat[[2]],plots[[3]],plots_wat[[3]],plots[[4]],plots_wat[[4]],ncol=2,nrow=3,align="h",common.legend=TRUE,legend="right"))
+```
+
+```{r specaccum sed}
+
+# Perform species accumulation with exact method (finds expected (mean) richness)
+accum<-specaccum(sed, method = "exact", permutations = 100,
+conditioned =TRUE, gamma = "jack1", w = NULL)
+
+# Perform species accumulation with random method
+accum2 <- specaccum(sed, "random")
+accum2
+summary(accum2)
+
+# Plot results of accumulation
+plot(accum,ci.type="poly", col="blue", lwd=2, ci.lty=0, ci.col="lightblue",xlab="No. of sites",ylab="No. of taxa",main="Sediment")
+boxplot(accum2, col="yellow", add=TRUE, pch="+")
+
+# Fit accumulations to different models
+mod<-fitspecaccum(accum,model="arrhenius")
+mod1<-fitspecaccum(accum,model="gleason")
+mod2<-fitspecaccum(accum,model="gitay")
+mod3<-fitspecaccum(accum,model="lomolino")
+
+# Check which model has the most support
+AIC(mod)
+AIC(mod1)
+AIC(mod2)
+AIC(mod3) # Lowest AIC, 283
+
+coef(mod3)
+a<-coef(mod3)[[1]]
+
+# Extrapolate using the best of the four models  
+pred<-predict(mod3,newdata=seq(0,300,by=1),interval="confidence")
+plot(accum,ci.type="poly", col="blue", lwd=2, ci.lty=0, ci.col="lightblue",xlab="No. of  sites",ylab="No. of species",main="Sediment",xlim=c(0,300),ylim=c(0,400))
+lines(pred)
+
+#Predicted no. of taxa at 500 sites
+predict(mod3,newdata=500) # 426
+#Proportion of predicted total richness
+c<-predict(mod3,newdata=500)/coef(mod3)[[1]] # 0.81
+#Observed richness as proportion of total richness
+b<-max(mod3[[4]])/coef(mod3)[[1]] # 0.67
+```
+
+```{r specaccum wat}
+
+# Perform species accumulation with exact method (finds expected (mean) richness)
+accum<-specaccum(wat, method = "exact", permutations = 100,
+conditioned =TRUE, gamma = "jack1", w = NULL)
+
+# Perform species accumulation with random method
+accum2 <- specaccum(wat, "random")
+accum2
+summary(accum2)
+
+# Plot results of accumulation
+plot(accum,ci.type="poly", col="blue", lwd=2, ci.lty=0, ci.col="lightblue",xlab="No. of sites",ylab="No. of taxa",main="Water")
+boxplot(accum2, col="yellow", add=TRUE, pch="+")
+
+# Fit accumulations to different models
+mod<-fitspecaccum(accum,model="arrhenius")
+mod1<-fitspecaccum(accum,model="gleason")
+mod2<-fitspecaccum(accum,model="gitay")
+mod3<-fitspecaccum(accum,model="lomolino")
+
+# Check which model has the most support
+AIC(mod)
+AIC(mod1)
+AIC(mod2)
+AIC(mod3) # Lowest AIC
+
+coef(mod3)
+a<-coef(mod3)[[1]]
+
+# Extrapolate using the best of the four models  
+pred<-predict(mod3,newdata=seq(0,300,by=1),interval="confidence")
+plot(accum,ci.type="poly", col="blue", lwd=2, ci.lty=0, ci.col="lightblue",xlab="No. of  sites",ylab="No. of species",main="Water",xlim=c(0,300),ylim=c(0,500))
+lines(pred)
+
+#Predicted no. of taxa at 500 sites
+predict(mod3,newdata=500) # 475
+#Proportion of predicted total richness
+c<-predict(mod3,newdata=500)/coef(mod3)[[1]] # 0.81
+#Observed richness as proportion of total richness
+b<-max(mod3[[4]])/coef(mod3)[[1]] # 0.66
+```

@@ -1,0 +1,209 @@
+---
+title: "Rich_depth"
+author: "Eva Sigsgaard"
+date: "2025-01-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(ggpmisc)
+library("gridExtra")
+library(RColorBrewer)
+library(readxl)
+```
+
+```{r load datasets}
+
+## Import rarefied 18S dataset
+rare_18S <- readRDS("../RDS/18S_no_c2_3reps.rds")
+
+## Import taxonomy table from before rarefying
+tax <- read.delim("../Tekstfiler/18S/18S_classified_all.tsv", sep="\t", row.names=NULL,check.names=FALSE)
+# Load table with corrected phylum names and marine/non-marine
+tax_cur<-read.table("../Tekstfiler/18S/18S_classified_phy_class_curated.tsv",sep="\t",header=T)
+# Remove non-marine classes from taxonomy table
+tax_mar <- tax[!tax$class %in% tax_cur$class[tax_cur$marine=="no"],]
+# Extract OTU counts
+#View(tax_mar)
+raw_18S <- tax_mar[,27:3785]
+
+## Get rarefied COI dataset
+rare_COI <- readRDS("../RDS/COI_no_c2_3reps.rds")
+
+## Import raw COI table incl. taxonomy
+pident70<-read.table("../Tekstfiler/COI/COI_70/COSQ_final_dataset_cleaned_pident_70.tsv",sep="\t", header=T, check.names=F)
+# Removing taxa that contain NA in both phylum and class
+tax_phy_class<-subset(pident70, !(is.na(pident70$phylum)&is.na(pident70$class)))
+## Import manually curated table
+tax_env<-read.table("../Tekstfiler/COI/COI_70/COSQ_pident70_phy_class_curated.tsv",sep="\t", header=T)
+## Remove non-marine classes
+COI_mar <- pident70[!pident70$class %in% tax_env$class[tax_env$marine=="no"],]
+# Extract OTU counts
+#View(COI_mar)
+raw_COI <- COI_mar[,29:3709]
+
+## Import rarefied 16S dataset
+rare_16S <- readRDS("../RDS/16S_no_c2_3reps.rds")
+
+## Load raw 16S table
+raw_16S <- read.table("../Tekstfiler/16S/cleaned_otu_silva_EES3.txt", sep="\t", header=T, row.names=1,check.names=F)
+
+## Get metadata. Using the metadata file for 16S across barcodes, as this one has a column with the same names used in the raw (unrarefied) tables
+sam <-read.table("../Tekstfiler/16S/metadata_rarefy_dada2.txt", sep="\t", header=T, row.names=1,check.names=F)
+sam$new_name <- paste(sam$substrate_type,sam$season,sam$habitat,sam$cluster,sep="_")
+```
+
+```{r prepare 18S}
+
+## Get OTU table
+otu_18S<-data.frame(otu_table(rare_18S),check.names=F)
+
+##Convert to presence/absence
+otu_18S[otu_18S>0]<-1
+
+## Get MOTU richness
+rich_18S <- as.data.frame(otu_18S %>% rowSums())
+names(rich_18S)[1]<-"richness"
+
+## Calculate read depths
+depth_18S<-as.data.frame(colSums(raw_18S))
+names(depth_18S)[1]<-"depth"
+
+## Add new sample names to depth table
+depth_18S$root <- sapply(strsplit(as.character(row.names(depth_18S)), "_"), head, 1)
+depth_18S$new_name <- sam$new_name[match(depth_18S$root,row.names(sam))]
+
+## Sum read depths of PCR replicates and filter replicates
+depth_18S <- within(depth_18S,rm("root"))
+depth_18S_agg <- aggregate(depth ~ new_name, data=depth_18S, FUN = sum)
+
+## Add depth to richness table
+rich_18S$depth <- depth_18S_agg$depth[match(row.names(rich_18S),depth_18S_agg$new_name)]
+```
+
+```{r 18S scatter}
+
+## Add habitat to depth table
+rich_18S$habitat <- sam$habitat[match(row.names(rich_18S),sam$new_name)]
+
+p<-ggplot(rich_18S, aes(x = depth, y = richness)) +
+  geom_point(size=2,aes(color=habitat)) +
+   scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = sort(unique(sam$habitat)),
+                     labels = sort(unique(sam$habitat)))+
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Read depth", y="MOTU Richness")+
+  theme_classic()+
+  theme(legend.position = "NA")
+p
+```
+
+```{r prepare COI}
+
+## Get OTU table
+otu_COI<-data.frame(otu_table(rare_COI),check.names=F)
+
+##Convert to presence/absence
+otu_COI[otu_COI>0]<-1
+
+## Get MOTU richness
+rich_COI <- as.data.frame(otu_COI %>% rowSums())
+names(rich_COI)[1]<-"richness"
+
+## Calculate read depths
+depth_COI<-as.data.frame(colSums(raw_COI))
+names(depth_COI)[1]<-"depth"
+
+## Add new sample names to depth table
+depth_COI$root <- sapply(strsplit(as.character(row.names(depth_COI)), "_"), head, 1)
+depth_COI$new_name <- sam$new_name[match(depth_COI$root,row.names(sam))]
+
+## Sum read depths of PCR replicates and filter replicates
+depth_COI <- within(depth_COI,rm("root"))
+depth_COI_agg <- aggregate(depth ~ new_name, data=depth_COI, FUN = sum)
+
+## Add depth to richness table
+rich_COI$depth <- depth_COI_agg$depth[match(row.names(rich_COI),depth_COI_agg$new_name)]
+```
+
+```{r COI scatter}
+
+## Add habitat to depth table
+rich_COI$habitat <- sam$habitat[match(row.names(rich_COI),sam$new_name)]
+
+q<-ggplot(rich_COI, aes(x = depth, y = richness)) +
+  geom_point(size=2,aes(color=habitat)) +
+   scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = sort(unique(sam$habitat)),
+                     labels = sort(unique(sam$habitat)))+
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Read depth", y="MOTU Richness")+
+  theme_classic()+
+  theme(legend.position = "NA")
+q
+```
+
+```{r prepare 16S}
+
+## Get OTU table
+otu_16S<-data.frame(otu_table(rare_16S),check.names=F)
+
+##Convert to presence/absence
+otu_16S[otu_16S>0]<-1
+
+## Get MOTU richness
+rich_16S <- as.data.frame(otu_16S %>% rowSums())
+names(rich_16S)[1]<-"richness"
+
+## Calculate read depths
+depth_16S<-as.data.frame(colSums(raw_16S))
+names(depth_16S)[1]<-"depth"
+
+## Add new sample names to depth table
+depth_16S$root <- sapply(strsplit(as.character(row.names(depth_16S)), "_"), head, 1)
+depth_16S$new_name <- sam$new_name[match(depth_16S$root,row.names(sam))]
+
+## Sum read depths of PCR replicates and filter replicates
+depth_16S <- within(depth_16S,rm("root"))
+depth_16S_agg <- aggregate(depth ~ new_name, data=depth_16S, FUN = sum)
+
+## Add depth to richness table
+rich_16S$depth <- depth_16S_agg$depth[match(row.names(rich_16S),depth_16S_agg$new_name)]
+```
+
+```{r 16S scatter}
+
+## Add habitat to depth table
+rich_16S$habitat <- sam$habitat[match(row.names(rich_16S),sam$new_name)]
+
+r<-ggplot(rich_16S, aes(x = depth, y = richness)) +
+  geom_point(size=2,aes(color=habitat)) +
+   scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = sort(unique(sam$habitat)),
+                     labels = sort(unique(sam$habitat)))+
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Read depth", y="MOTU Richness")+
+  theme_classic()+
+  theme(legend.position = "top")
+
+r
+```
+
+```{r combine plots}
+
+ggsave(file="../Plots/Scatter_rich/Depth_rich.png",ggarrange(p,q,r,nrow=1,ncol=3,align="h",common.legend=TRUE,legend="top"),width=30,height=15,units="cm")
+```

@@ -1,0 +1,243 @@
+---
+title: "Euk_Pro_rich"
+author: "Eva Sigsgaard"
+date: "2024-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(ggpmisc)
+library("gridExtra")
+library(RColorBrewer)
+```
+
+```{r load datasets}
+
+## Get COI dataset
+COSQ_rare2_70 <- readRDS("../RDS/COI_no_c2_3reps.rds")
+
+## Import 18S dataset
+DADAwang1<-readRDS("../RDS/18S_no_c2_3reps.rds")
+
+## Import 16S dataset
+Prok<-readRDS("../RDS/16S_no_c2_3reps.rds")
+
+## Load raw 16S table
+otu_mat<-read.table("../Tekstfiler/16S/cleaned_otu_silva_EES3.txt", sep="\t", header=T, row.names=1,check.names=F)
+
+## Import overview of uni-/multicellularity for eukaryotes
+cell<-read.table("../Tekstfiler/Across_barcodes/Supergroups_and_cellularity.tsv",sep="\t", header=T)
+```
+
+```{r prepare COI}
+
+## Get OTU table
+otu_70<-data.frame(otu_table(COSQ_rare2_70),check.names=F)
+
+## Get taxonomy
+tax_70<-data.frame(tax_table(COSQ_rare2_70))
+
+## Add uni-/multicellularity
+tax_70$cellularity<-cell$uni_multi[match(tax_70$new_class,cell$class)]
+
+## Get OTU IDs that are from unicellular taxa
+unicellular<-rownames(tax_70)[tax_70$cellularity=="U"]
+
+## Extract only unicellular taxa from OTU table
+otu_70_uni<-otu_70[,colnames(otu_70) %in% unicellular]
+
+##Convert to presence/absence
+otu_70_uni[otu_70_uni>0]<-1
+
+## Get richness of unicellular OTUs
+COI_uni <- otu_70_uni %>% rowSums()
+```
+
+```{r prepare 18S}
+
+## Get cleaned OTU table
+otus_18S<-data.frame(otu_table(DADAwang1),check.names=F)
+
+## Get taxonomy
+tax<-data.frame(tax_table(DADAwang1))
+
+## Add uni-/multicellularity
+tax$cellularity<-cell$uni_multi[match(tax$class,cell$class)]
+
+## Get OTU IDs that are from unicellular taxa
+unicellular_18S<-rownames(tax)[tax$cellularity=="U"]
+
+## Extract only unicellular taxa from OTU table
+otus_uni<-otus_18S[,colnames(otus_18S) %in% unicellular_18S]
+
+##Convert to presence/absence
+otus_uni[otus_uni>0]<-1
+
+## Get richness of unicellular OTUs
+`18S_uni` <- otus_uni %>% rowSums()
+```
+
+```{r prepare 16S}
+
+## Calculate read depths
+depths<-colSums(otu_mat)
+
+## Get cleaned OTU table
+otus<-data.frame(otu_table(Prok),check.names=F)
+
+##Convert to presence/absence
+otus[otus>0]<-1
+
+## Get richness of unicellular OTUs
+rich_prok <- otus %>% rowSums()
+```
+
+```{r scatterplot}
+
+## Convert richness vectors to dataframes
+COI_uni <- as.data.frame(COI_uni)
+`18S_uni` <- as.data.frame(`18S_uni`)
+rich_prok <- as.data.frame(rich_prok)
+
+## Merge richness dataframes
+rich_euk<-merge(COI_uni,`18S_uni`,by="row.names",all=TRUE)
+row.names(rich_euk)<-rich_euk$Row.names
+rich_euk<-within(rich_euk,rm(Row.names))
+rich_all<-merge(rich_euk,rich_prok,by="row.names",all=TRUE)
+
+rich_long <- rich_all %>%
+  pivot_longer(c(COI_uni, `18S_uni`), names_to = "Marker", values_to = "OTU_richness")
+
+## Find colourblind-friendly colours
+display.brewer.all(n=3, type="all", select=NULL, exact.n=TRUE, 
+                    colorblindFriendly=TRUE)
+brewer.pal(3,"Dark2")
+cols <- c("COI_uni"="#D95F02","18S_uni"="#7570B3")
+
+p<-ggplot(rich_long, aes(x = rich_prok, y = OTU_richness, colour = Marker)) +
+  geom_point(size=2) +
+  scale_color_manual(values = cols,
+                     name = "", breaks = c("COI_uni","18S_uni"),
+                     labels = c("COI_uni","18S_uni")) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Richness of prokaryotes", y="Richness of unicellular eukaryotes")+ 
+  theme_classic()+
+  theme(legend.position = "NA")
+p
+```
+
+```{r multicellular COI}
+
+## Get OTU IDs that are from multicellular taxa
+multicellular<-rownames(tax_70)[tax_70$cellularity=="M"]
+
+## Extract only multicellular taxa from OTU table
+otu_70_multi<-otu_70[,colnames(otu_70) %in% multicellular]
+
+##Convert to presence/absence
+otu_70_multi[otu_70_multi>0]<-1
+
+## Get richness of multicellular OTUs
+COI <- otu_70_multi %>% rowSums()
+```
+
+```{r multicellular 18S}
+
+## Get OTU IDs that are from unicellular taxa
+multicellular_18S<-rownames(tax)[tax$cellularity=="M"]
+
+## Extract only multicellular taxa from OTU table
+otus_multi<-otus_18S[,colnames(otus_18S) %in% multicellular_18S]
+
+##Convert to presence/absence
+otus_multi[otus_multi>0]<-1
+
+## Get richness of multicellular OTUs
+`18S` <- otus_multi %>% rowSums()
+```
+
+```{r scatterplot multicellular}
+
+## Convert richness vectors to dataframes
+COI <- as.data.frame(COI)
+`18S` <- as.data.frame(`18S`)
+
+## Merge richness dataframes
+rich_euk<-merge(COI,`18S`,by="row.names",all=TRUE)
+row.names(rich_euk)<-rich_euk$Row.names
+rich_euk<-within(rich_euk,rm(Row.names))
+rich_all<-merge(rich_euk,rich_prok,by="row.names",all=TRUE)
+
+rich_long <- rich_all %>%
+  pivot_longer(c(COI, `18S`), names_to = "Marker", values_to = "OTU_richness")
+
+## Check if the below provides the same marker order as for the previous plot
+unique(rich_long$Marker)
+
+cols <- c("COI"="#D95F02","18S"="#7570B3")
+
+q<-ggplot(rich_long, aes(x = rich_prok, y = OTU_richness, colour = Marker)) +
+  geom_point(size=2) +
+  scale_color_manual(values = cols,
+                     name = "", breaks = c("COI","18S"),
+                     labels = c("COI","18S")) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Richness of prokaryotes", y="Richness of multicellular eukaryotes")+
+  theme_classic()+
+  theme(legend.position = "NA")
+q
+```
+
+```{r uni vs multi}
+
+## Merge unicellular dataframes
+names(COI_uni)[1]<-"COI"
+names(`18S_uni`)[1]<-"18S"
+rich_uni<-merge(COI_uni,`18S_uni`,by="row.names",all=TRUE)
+rich_uni_long <- rich_uni %>%
+  pivot_longer(c(COI, `18S`), names_to = "Marker", values_to = "Unicellular")
+
+## Merge multicellular dataframes
+names(COI)[1]<-"COI"
+names(`18S`)[1]<-"18S"
+rich_multi<-merge(COI,`18S`,by="row.names",all=TRUE)
+rich_multi_long <- rich_multi %>%
+  pivot_longer(c(COI, `18S`), names_to = "Marker", values_to = "Multicellular")
+
+## Add multicellular richness to unicellular dataframe
+rich_euk_long <- left_join(rich_uni_long,rich_multi_long,by=c("Row.names","Marker"))
+
+r<-ggplot(rich_euk_long, aes(x = Unicellular, y = Multicellular, colour = Marker)) +
+  geom_point(size=2) +
+  scale_color_manual(values = cols,
+                     name = "", breaks = c("COI","18S"),
+                     labels = c("COI","18S")) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+  labs(x="Richness of unicellular eukaryotes", y="Richness of multicellular eukaryotes")+
+  theme_classic()+
+  theme(legend.position = "NA")
+r
+```
+
+```{r combine plots}
+
+rich_plots <- grid.arrange(r,q,p,nrow=1,ncol=3)
+ggsave(file="../Plots/Scatter_rich/Cellularity_rich.png",rich_plots,width=30,height=15,units="cm")
+```
+
+

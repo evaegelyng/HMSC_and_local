@@ -1,0 +1,345 @@
+---
+title: "Salinity plots"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-11-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+
+library(ggplot2)
+library(ggpubr)
+library(phyloseq)
+```
+
+```{r load data}
+
+salinity<-read.table("../Tekstfiler/merged_metadata_230427.txt",header=TRUE)
+
+sed_18S<-read.table("../Tekstfiler/18S/Species_data_18S_filt_sed.tsv",row.names=1)
+wat_18S<-read.table("../Tekstfiler/18S/Species_data_18S_filt_wat.tsv",row.names=1)
+sed_COI<-read.table("../Tekstfiler/species_data_COI_filt_sed.tsv",row.names=1)
+wat_COI<-read.table("../Tekstfiler/Species_data_COI_filt_wat.tsv",row.names=1)
+sed_16S<-read.table("../Tekstfiler/16S/species_data_16S_filt_sed.tsv",row.names=1)
+wat_16S<-read.table("../Tekstfiler/16S/Species_data_16S_filt_wat.tsv",row.names=1)
+
+#As we need to group our orders by class, we will need the taxonomic data 
+COSQ_rare2<-readRDS("../RDS/COI_no_c2_3reps.rds")
+TAX_S = tax_table(COSQ_rare2)
+tax <- data.frame(TAX_S,rownames=F)
+tax<- tax[,c("order","class")]
+
+#As we need to group our classes by phyla, we will need the taxonomic data 
+Euk_rare2<-readRDS("../RDS/18S_no_c2_3reps_pident90_lulu97.rds")
+TAX_Euk = tax_table(Euk_rare2)
+tax_18S <- data.frame(TAX_Euk,rownames=F)
+tax_18S<-tax_18S[,c("phylum","class")]
+
+#As we need to group our orders by class, we will need the taxonomic data 
+Pro_rare2<-readRDS("../RDS/16S_no_c2_3reps.rds")
+TAX_Pro = tax_table(Pro_rare2)
+tax_16S <- data.frame(TAX_Pro,rownames=F)
+tax_16S<- tax_16S[,c("Phylum","Class")]
+
+# Add columns to metadata for matching
+salinity$sed_name<-paste("sediment",salinity$season,salinity$habitat,salinity$cluster,sep="_")
+salinity$wat_name<-paste("water",salinity$season,salinity$habitat,salinity$cluster,sep="_")
+```
+
+```{r sed 18S}
+
+# Sort classes by phylum
+sed_18S_t<-as.data.frame(t(sed_18S))
+sed_18S_t$phylum<-tax_18S$phylum[match(row.names(sed_18S_t),tax_18S$class)]
+sed_18S_sort<-sed_18S_t[order(sed_18S_t$phylum),]
+
+# Change row names to include phylum name
+sed_18S_final<-sed_18S_sort
+row.names(sed_18S_final)<-paste(sed_18S_final$phylum,row.names(sed_18S_final),sep=":")
+sed_18S_final<-within(sed_18S_final,rm(phylum))
+sed_18S_final<-as.data.frame(t(sed_18S_final))
+
+# Add salinity to richness table
+sed_18S_final$salinity<-salinity$Salinity[match(row.names(sed_18S_final),salinity$sed_name)]
+
+n<-ncol(sed_18S_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-sed_18S_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(sed_18S_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8) +
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_18S_",j,".png",sep=""),annotate_figure(p,top="Sediment, 18S"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```
+
+```{r wat 18S}
+
+# Sort classes by phylum
+wat_18S_t<-as.data.frame(t(wat_18S))
+wat_18S_t$phylum<-tax_18S$phylum[match(row.names(wat_18S_t),tax_18S$class)]
+wat_18S_sort<-wat_18S_t[order(wat_18S_t$phylum),]
+
+# Change row names to include phylum name
+wat_18S_final<-wat_18S_sort
+row.names(wat_18S_final)<-paste(wat_18S_final$phylum,row.names(wat_18S_final),sep=":")
+wat_18S_final<-within(wat_18S_final,rm(phylum))
+wat_18S_final<-as.data.frame(t(wat_18S_final))
+
+# Add salinity to richness table
+wat_18S_final$salinity<-salinity$Salinity[match(row.names(wat_18S_final),salinity$wat_name)]
+
+n<-ncol(wat_18S_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-wat_18S_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(wat_18S_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8)+
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_18S_",j,".png",sep=""),annotate_figure(p,top="Water, 18S"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```
+
+```{r sed COI}
+
+# Sort classes by phylum
+sed_COI_t<-as.data.frame(t(sed_COI))
+sed_COI_t$class<-tax$class[match(row.names(sed_COI_t),tax$order)]
+sed_COI_sort<-sed_COI_t[order(sed_COI_t$class),]
+
+# Change row names to include class name
+sed_COI_final<-sed_COI_sort
+row.names(sed_COI_final)<-paste(sed_COI_final$class,row.names(sed_COI_final),sep=":")
+sed_COI_final<-within(sed_COI_final,rm(class))
+sed_COI_final<-as.data.frame(t(sed_COI_final))
+
+# Add salinity to richness table
+sed_COI_final$salinity<-salinity$Salinity[match(row.names(sed_COI_final),salinity$sed_name)]
+
+n<-ncol(sed_COI_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-sed_COI_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(sed_COI_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8) +
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_COI_",j,".png",sep=""),annotate_figure(p,top="Sediment, COI"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```
+
+```{r wat COI}
+
+# Sort classes by phylum
+wat_COI_t<-as.data.frame(t(wat_COI))
+wat_COI_t$class<-tax$class[match(row.names(wat_COI_t),tax$order)]
+wat_COI_sort<-wat_COI_t[order(wat_COI_t$class),]
+
+# Change row names to include class name
+wat_COI_final<-wat_COI_sort
+row.names(wat_COI_final)<-paste(wat_COI_final$class,row.names(wat_COI_final),sep=":")
+wat_COI_final<-within(wat_COI_final,rm(class))
+wat_COI_final<-as.data.frame(t(wat_COI_final))
+
+# Add salinity to richness table
+wat_COI_final$salinity<-salinity$Salinity[match(row.names(wat_COI_final),salinity$wat_name)]
+
+n<-ncol(wat_COI_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-wat_COI_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(wat_COI_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8) +
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_COI_",j,".png",sep=""),annotate_figure(p,top="Water, COI"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```
+
+```{r sed 16S}
+
+# Sort classes by phylum
+sed_16S_t<-as.data.frame(t(sed_16S))
+sed_16S_t$Phylum<-tax_16S$Phylum[match(row.names(sed_16S_t),tax_16S$Class)]
+sed_16S_sort<-sed_16S_t[order(sed_16S_t$Phylum),]
+
+# Change row names to include phylum name
+sed_16S_final<-sed_16S_sort
+row.names(sed_16S_final)<-paste(sed_16S_final$Phylum,row.names(sed_16S_final),sep=":")
+sed_16S_final<-within(sed_16S_final,rm(Phylum))
+sed_16S_final<-as.data.frame(t(sed_16S_final))
+
+# Add salinity to richness table
+sed_16S_final$salinity<-salinity$Salinity[match(row.names(sed_16S_final),salinity$sed_name)]
+
+n<-ncol(sed_16S_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-sed_16S_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(sed_16S_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8) +
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Sed_16S_",j,".png",sep=""),annotate_figure(p,top="Sediment, 16S"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```
+
+```{r wat 16S}
+
+# Sort classes by phylum
+wat_16S_t<-as.data.frame(t(wat_16S))
+wat_16S_t$Phylum<-tax_16S$Phylum[match(row.names(wat_16S_t),tax_16S$Class)]
+wat_16S_sort<-wat_16S_t[order(wat_16S_t$Phylum),]
+
+# Change row names to include phylum name
+wat_16S_final<-wat_16S_sort
+row.names(wat_16S_final)<-paste(wat_16S_final$Phylum,row.names(wat_16S_final),sep=":")
+wat_16S_final<-within(wat_16S_final,rm(Phylum))
+wat_16S_final<-as.data.frame(t(wat_16S_final))
+
+# Add salinity to richness table
+wat_16S_final$salinity<-salinity$Salinity[match(row.names(wat_16S_final),salinity$wat_name)]
+
+n<-ncol(wat_16S_final)
+plots<-list()
+
+for (i in 1:(n-1)){
+  tab<-wat_16S_final[,c(i,n)]
+  names(tab)[1]<-"rich"
+  plot<-ggplot(tab, aes(x=salinity, y=rich)) +
+  geom_point(size=1.5)+labs(title=names(wat_16S_final[i]),
+       x="Salinity (ppt)", y = "MOTU richness") +
+  geom_smooth() +
+  theme_gray(base_size = 8)+
+  theme(plot.title = element_text(size=7))
+  plots[[i]]<-plot
+}
+
+# Number of plots per page
+m<-9
+
+# Number of pages needed for m plots per page
+k<-ceiling(length(plots)/9)
+x<-1
+y<-m
+
+for (j in 1:k){
+
+p<-ggarrange(plotlist=plots[x:y],ncol=3,nrow=3)
+ggsave(paste("../Plots/Scatter_rich/Salinity/Wat_16S_",j,".png",sep=""),annotate_figure(p,top="Water, 16S"))
+x<-y+1
+y<-x+(m-1)
+  
+}
+```

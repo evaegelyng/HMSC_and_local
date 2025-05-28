@@ -1,0 +1,790 @@
+---
+title: "16S analyses"
+author: "Eva Egelyng Sigsgaard"
+date: "2023-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.path = "images/")
+```
+
+```{r libraries, message=FALSE}
+
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+library(ggrepel)
+library(phyloseq)
+library(tibble)
+library(hrbrthemes)
+library(viridis)
+library(e1071)
+library(car)
+library(FSA)
+library(ggVennDiagram)
+library(ggvenn)
+library(eulerr)
+library(tidyverse)
+library(ggforce)
+```
+
+```{r load data}
+
+## Get rarefied OTU table
+otus1<-read.table("../../Tekstfiler/16S/otu_rarefy_dada2.txt")
+
+## Get tax table
+taxa<-read.table("../../Tekstfiler/16S/tax_rarefy_dada2.txt", sep="\t", row.names = 1, header=T)
+
+##Get metadata
+metadata<-read.table("../../Tekstfiler/16S/metadata_rarefy_dada2.txt", sep="\t", header=T)
+
+## Get more metadata
+areas<-read.table("../../Tekstfiler/COI/Mads_metadata_230921_C19.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+
+#Create extra metadata variables
+metadata$sshc<-paste(metadata$substrate_type, metadata$season, metadata$habitat, metadata$cluster, sep="_")
+##Including the number of field reps per sample
+bio_reps<-metadata %>% group_by(sshc) %>% summarise(n=n())
+metadata$bio_reps<-bio_reps$n[match(metadata$sshc,bio_reps$sshc)]
+##And area names
+metadata$New_Area<-areas$New_Area[match(metadata$cluster,areas$Cluster)]
+```
+
+```{r final filtering}
+
+###Make phyloseq object
+tax_mat_b<-as.matrix(taxa)
+OTU = otu_table(otus1, taxa_are_rows = FALSE)
+TAX_b = tax_table(tax_mat_b)
+p_NCBI = phyloseq(OTU, TAX_b)
+
+##Add metadata
+sampledata = sample_data(data.frame(metadata, row.names=metadata$root, stringsAsFactors=FALSE))
+DADAwang1 = merge_phyloseq(p_NCBI, sampledata)
+DADAwang1
+
+##Remove cluster 2, which was only sampled in one season
+DADAwang1<-subset_samples(DADAwang1, !cluster==2)
+DADAwang1 # 6 field reps removed
+
+#Select only samples with 3 replicates
+DADAwang1<-subset_samples(DADAwang1, bio_reps==3)
+DADAwang1 # 4 field reps removed
+
+# Merge field replicates
+DT1<-merge_samples(DADAwang1, "sshc", fun = mean)
+
+#Sample data needs to be remade after merging of field replicates
+d<-data.frame(sample_data(DT1)[,c("cluster","season","habitat")])
+#Splits rowname into habitat from third argument
+d$habitat<- sapply(strsplit(as.character(rownames(d)), "_"), function(x) unlist(strsplit(x[3], "_"))[1])
+#Splits rowname into season from second argument
+d$season<- sapply(strsplit(as.character(rownames(d)), "_"), function(x) unlist(strsplit(x[2], "_"))[1])
+d$sshc<-rownames(d)
+d$sch<-paste(d$season,d$cluster,d$habitat,sep="_")
+d$substrate_type<-metadata$substrate_type[match(rownames(d),metadata$sshc)]
+
+sample_data(DT1)<-d[,c("sshc","sch","cluster","season","habitat","substrate_type")]
+
+#Export phyloseq object as rds file
+saveRDS(DT1,file="../../RDS/16S_no_c2_3reps.rds")
+
+## Get cleaned OTU table
+rep_agg<-data.frame(otu_table(DT1),check.names=F)
+
+## Get taxonomy
+tax<-data.frame(tax_table(DT1))
+```
+
+```{r prepare data}
+
+# Save object for boxplots
+rep_agg_pa<-rep_agg
+rep_agg$Substrate<-metadata$substrate_type[match(row.names(rep_agg),metadata$sshc)]
+
+#Subset data to sediment and water
+sed<-rep_agg[rep_agg$Substrate=="sediment",]
+sed<-within(sed,rm(Substrate))
+wat<-rep_agg[rep_agg$Substrate=="water",]
+wat<-within(wat,rm(Substrate))
+
+## Remove empty samples
+sed<-sed[rowSums(sed[])>0,] 
+wat<-wat[rowSums(wat[])>0,] 
+
+# Remove empty colums (species)
+sed<-sed[colSums(sed)>0]
+wat<-wat[colSums(wat)>0]
+
+##Convert to presence/absence
+sed[sed>0]<-1
+wat[wat>0]<-1
+```
+
+```{r prepare boxplots}
+
+# Subset to clusters where all three habitats were sampled
+metadata$sc<-paste(metadata$season,metadata$cluster,sep="_")
+rep_agg_pa$sc<-metadata$sc[match(row.names(rep_agg_pa),metadata$sshc)]
+length(unique(rep_agg_pa$sc)) # 62
+hab_reps<-rep_agg_pa %>% group_by(sc) %>% summarise(n=n())
+six_hreps<-filter(hab_reps,n=="6")
+nrow(six_hreps) # 30
+rep_6hab<-rep_agg_pa[rep_agg_pa$sc %in% six_hreps$sc, ]
+
+##Convert to presence/absence
+rep_6hab<-within(rep_6hab,rm(sc))
+rep_6hab[rep_6hab>0]<-1
+
+# Calculate MOTU richness per sample
+rep_6hab$rich<-rowSums(rep_6hab)
+
+rep_6hab$Substrate<-metadata$substrate_type[match(row.names(rep_6hab),metadata$sshc)]
+rep_6hab$habitat<-metadata$habitat[match(row.names(rep_6hab),metadata$sshc)]
+rep_6hab$season<-metadata$season[match(row.names(rep_6hab),metadata$sshc)]
+
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+dat <- rep_6hab %>% tibble::rownames_to_column(var="outlier") %>% group_by(habitat,season,Substrate) %>% mutate(is_outlier=ifelse(is_outlier(rich), rich, as.numeric(NA)))
+dat$outlier[which(is.na(dat$is_outlier))] <- as.numeric(NA)
+dat$cluster<-metadata$cluster[match(dat$outlier,metadata$sshc)]
+```
+
+```{r grouped boxplot, fig.width = 10, fig.height = 7}
+
+ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = c("sediment","water"),
+                     labels = c("sediment","water")) +
+  xlab("") + ylab("ASV richness")+
+  facet_grid(. ~ season)+ 
+  theme(legend.position = "NA", text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)
+```
+
+To test for statistically significant differences between habitats. we will first look at the distribution of the data.
+```{r distribution plots of raw richness, warning = FALSE}
+
+ggplot(data = dat, aes(x = rich, group = habitat, fill=habitat)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+  theme_ipsum() +
+    labs(y = "", x = "Richness", title = "Distribution of Raw Richness values", fill = "Habitat")
+```
+Richness does not seem to be skewed, but lets formally test it:
+
+```{r testing skewness, include = TRUE, warning = FALSE}
+
+skewness(dat$rich)
+```
+
+There is no skewness in the data (value was <0.5 and >-0.5), so lets test if any habitat has a statistically different richness from the others.
+So lets try an ANOVA and check for normality of residuals.
+
+```{r Habitat ANOVA test }
+
+dat$habitat <- as.factor(dat$habitat)
+res_aov_rich_hab <- aov(rich ~ habitat,
+  data = dat)
+summary(res_aov_rich_hab)
+```
+There is significant difference in richness between habitats!
+Lets look at the residuals.
+
+```{r Habitat ANOVA residuals, message=FALSE}
+
+hist(res_aov_rich_hab$residuals)
+qqPlot(res_aov_rich_hab$residuals, id = FALSE)
+```
+Plotting the residuals from the ANOVA does not clearly show that residuals are normally distributed.
+We would do best to perform a non-parametric test. Let's try the Kruskal-Wallis test:
+
+```{r Kruskal-Wallis test habitat}
+
+kruskal.test(rich ~ habitat,
+  data = dat)
+```
+With the non-parametric test there is still a significant difference in richness between habitats.
+Lets see where the difference lies.
+We will use a non-parametric post-hoc test, the Dunn test.
+```{r Dunn test,message=FALSE}
+
+dunn_res_hab <- dunnTest(rich ~ habitat,
+  data = dat,
+  method = "bonferroni"
+)
+dunn_res_hab
+```
+From these comparisons it looks like there is a higher richness in rocks compared to either sand or eelgrass.
+
+Lets visualise these differences on the box plot, first across seasons:
+*Note*: unfortunately when using facet_wrap() as is done in the next plot with season included as a grouping variable, you cannot use a built-in Tukey HSD test and account for all comparisons (it only accounts for comparisons in one plot of the facets) for that reason I have chosen a t-test with a bonferroni correction. It is a little conservative but with a small number of comparisons it is argued as a preferred option and makes almost no difference from Tukey HSD.
+
+```{r grouped boxplot w. sig diff w.o. season, fig.width = 10, fig.height = 7}
+
+dat$Substrate <- factor(dat$Substrate)
+
+ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c('#d8b365','#5ab4ac'),
+                     name = "", breaks = c("sediment","water"),
+                     labels = c("sediment","water")) +
+  xlab("") + ylab("ASV richness")+
+  theme(legend.position = "right" , text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_signif(comparisons = list(c("eelgrass", "sand"), c("eelgrass", "rocks") ,c("sand", "rocks")), 
+              map_signif_level=TRUE, test = t.test, step_increase = 0.05, tip_length = 0)
+```
+And then a boxplot of habitat differences split into season and substrate:
+
+```{r grouped boxplot w. sig diff, fig.width = 12, fig.height = 9}
+
+dat$season <- factor(dat$season , levels=c("spring", "autumn"))
+
+boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) + 
+  geom_boxplot() +
+  scale_fill_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = c("eelgrass","rocks", "sand"),
+                     labels = c("eelgrass","rocks", "sand")) +
+  xlab("") + ylab("ASV richness")+
+  facet_wrap(Substrate ~ season, ncol = 4)+ 
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+   geom_pwc(aes(group = habitat),
+           tip.length = 0,
+           method = "t_test",hide.ns=TRUE)+
+  theme_classic(base_size = 18)+
+  theme(legend.position = "NA" , text = element_text(size = 18))
+
+boxplot_habitat_adj <- ggadjust_pvalue(
+  boxplot_habitat_season, p.adjust.method = "holm",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+
+saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/16S_habitat.rds")
+```
+
+Next up we are going to test if there are significant differences in ASV richness across substrates i.e. water and sediment.
+
+```{r Substrate ANOVA test }
+
+res_aov_rich_subst <- aov(rich ~ Substrate,
+  data = dat)
+summary(res_aov_rich_subst)
+```
+There is a significant difference in richness between sediment and water!
+Lets check the residuals for normality.
+
+```{r Substrate ANOVA residuals, message=FALSE}
+
+hist(res_aov_rich_subst$residuals)
+qqPlot(res_aov_rich_subst$residuals, id = FALSE)
+```
+Plotting the residuals from the anova it seems that the residuals are not normally distributed.
+So we will run a Kruskal-Wallis test like before
+
+```{r Kruskal-Wallis test habitat}
+
+kruskal.test(rich ~ Substrate,
+  data = dat)
+```
+There is (still) a significant difference in richness between sediment and water
+Now we'll illustrate these differences on a boxplot across seasons:
+
+```{r grouped boxplot w. substrate sig diff, fig.width = 10, fig.height = 7}
+
+boxplot_substr <- ggplot(dat, aes(x=Substrate, y=rich, fill = habitat)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = c("eelgrass","rocks", "sand"),
+                     labels = c("eelgrass","rocks", "sand")) +
+  xlab("") + ylab("ASV richness")+
+  theme(legend.position = "right" , text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_pwc(aes(group = Substrate),
+           tip.length = 0,
+           method = "t_test")
+
+ggadjust_pvalue(
+  boxplot_substr, p.adjust.method = "bonferroni",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+```
+
+Now we'll illustrate these differences on a boxplot grouped by season:
+
+```{r grouped boxplot w. substrate sig diff, fig.width = 10, fig.height = 7}
+
+boxplot_substr_season <- ggplot(dat, aes(x=Substrate, y=rich, fill = habitat)) + 
+    geom_boxplot() +
+  scale_fill_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = c("eelgrass","rocks", "sand"),
+                     labels = c("eelgrass","rocks", "sand")) +
+  xlab("") + ylab("ASV richness")+
+  facet_grid(. ~ season)+ 
+  theme(legend.position = "NA" , text = element_text(size = 18))+
+  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_pwc(aes(group = Substrate),
+           tip.length = 0,
+           method = "t_test")
+
+boxplot_substr_adj <- ggadjust_pvalue(
+  boxplot_substr_season, p.adjust.method = "bonferroni",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+
+saveRDS(boxplot_substr_adj,"../../Plots/Boxplots/16S_substrate.rds")
+```
+
+```{r Venn function}
+
+# Function for plotting euler diagrams with ggplot2 (adapted from: https://gist.github.com/danlooo/d23d8bcf8856c7dd8e86266097404ded)
+
+ggeulerr <- function(combinations, show_quantities = TRUE, show_labels = FALSE, ...) {
+  data <-
+    eulerr::euler(combinations = combinations) %>%
+    plot(quantities = show_quantities) %>%
+    pluck("data")
+  
+  tibble() %>%
+    ggplot() +
+    ggforce::geom_ellipse(
+      data = data$ellipses %>% as_tibble(rownames = "Set"),
+      mapping = aes(x0 = h, y0 = k, a = a, b = b, angle = 0, fill = Set),
+      alpha = 0.5
+    ) +
+    geom_text(
+      data = {
+        data$centers %>%
+          mutate(
+            label = labels %>% map2(quantities, ~ {
+              if (!is.na(.x) && !is.na(.y) && show_labels) {
+                paste0(.x, "\n", sprintf(.y, fmt = "%.3g"))
+              } else if (!is.na(.x) && show_labels) {
+                .x
+              } else if (!is.na(.y)) {
+                .y
+              } else {
+                ""
+              }
+            })
+          )
+      },
+      mapping = aes(x = x, y = y, label = label), fontface="bold", size=2
+    ) +
+    theme(panel.grid = element_blank()) +
+    coord_fixed()
+}
+```
+
+```{r venn both}
+
+# Subset to clusters where all three habitats were sampled
+rep_agg$sc<-metadata$sc[match(row.names(rep_agg),metadata$sshc)]
+length(unique(rep_agg$sc)) # 62
+hab_reps<-rep_agg %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="6")
+nrow(three_hreps) # 30
+both_3hab<-rep_agg[rep_agg$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+both_3hab$habitat<-metadata$habitat[match(row.names(both_3hab),metadata$sshc)]
+
+eel<-both_3hab[both_3hab$habitat=="eelgrass",]
+rock<-both_3hab[both_3hab$habitat=="rocks",]
+sand<-both_3hab[both_3hab$habitat=="sand",]
+
+# Remove unnecessary columns
+eel<-within(eel,rm(habitat,sc,Substrate))
+rock<-within(rock,rm(habitat,sc,Substrate))
+sand<-within(sand,rm(habitat,sc,Substrate))
+
+##Convert to presence/absence
+eel[eel>0]<-1
+rock[rock>0]<-1
+sand[sand>0]<-1
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+both_list <- list(Eelgrass = eel_sp,Rock = rock_sp,Sand = sand_sp)
+
+venn_both <- ggeulerr(both_list[1:3]) +
+  theme_bw() + # For white background
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +  # To remove axis text, titles and ticks
+  theme(panel.grid = element_blank()) + # To remove gridlines
+  theme(panel.border = element_blank()) + # To remove plot border
+  scale_fill_manual(values = c(Eelgrass = "yellowgreen", Sand = "thistle3", Rock = "cornflowerblue"))  #Setting colors for categories
+  #+ guides(fill="none") # To remove legend for categories (these are shown with labels anyways)
+
+venn_both
+
+saveRDS(venn_both,"../../Plots/Venn/16S_both.rds")
+
+rep_agg<-within(rep_agg,rm(sc))
+```
+
+```{r venn sed}
+
+# Subset to clusters where all three habitats were sampled
+sed$sc<-metadata$sc[match(row.names(sed),metadata$sshc)]
+length(unique(sed$sc)) # 62
+hab_reps<-sed %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+sed_3hab<-sed[sed$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+sed_3hab$habitat<-metadata$habitat[match(row.names(sed_3hab),metadata$sshc)]
+
+eel<-sed_3hab[sed_3hab$habitat=="eelgrass",]
+rock<-sed_3hab[sed_3hab$habitat=="rocks",]
+sand<-sed_3hab[sed_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make species list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+sed_list <- list(Eelgrass = eel_sp,Rock = rock_sp,Sand = sand_sp)
+
+venn_sed <- ggeulerr(sed_list[1:3]) +
+  theme_bw(base_size = 14) + # For white background
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +  # To remove axis text, titles and ticks
+  theme(panel.grid = element_blank()) + # To remove gridlines
+  theme(panel.border = element_blank()) + # To remove plot border
+  scale_fill_manual(values = c(Eelgrass = "yellowgreen", Sand = "thistle3", Rock = "cornflowerblue"))  #Setting colors for categories
+  #+ guides(fill="none") # To remove legend for categories (these are shown with labels anyways)
+
+venn_sed
+
+ggsave(filename='../../Plots/Venn/16S_sed.png',venn_sed)
+
+saveRDS(venn_sed,"../../Plots/Venn/16S_sed.rds")
+
+sed<-within(sed,rm(sc))
+```
+
+```{r venn wat}
+
+# Subset to clusters where all three habitats were sampled
+wat$sc<-metadata$sc[match(row.names(wat),metadata$sshc)]
+length(unique(wat$sc)) # 63
+hab_reps<-wat %>% group_by(sc) %>% summarise(n=n())
+three_hreps<-filter(hab_reps,n=="3")
+nrow(three_hreps) # 32
+wat_3hab<-wat[wat$sc %in% three_hreps$sc, ]
+
+# Subset to each habitat
+wat_3hab$habitat<-metadata$habitat[match(row.names(wat_3hab),metadata$sshc)]
+
+eel<-wat_3hab[wat_3hab$habitat=="eelgrass",]
+rock<-wat_3hab[wat_3hab$habitat=="rocks",]
+sand<-wat_3hab[wat_3hab$habitat=="sand",]
+
+eel<-within(eel,rm(habitat,sc))
+rock<-within(rock,rm(habitat,sc))
+sand<-within(sand,rm(habitat,sc))
+
+# Make OTU list for each habitat
+eel<-eel[,colSums(eel)>0]
+eel_sp<-colnames(eel)
+
+rock<-rock[,colSums(rock)>0]
+rock_sp<-colnames(rock)
+
+sand<-sand[,colSums(sand)>0]
+sand_sp<-colnames(sand)
+
+wat_list <- list(Eelgrass = eel_sp,Rock = rock_sp,Sand = sand_sp)
+
+venn_wat <- ggeulerr(wat_list[1:3]) +
+  theme_bw(base_size = 14) + # For white background
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +  # To remove axis text, titles and ticks
+  theme(panel.grid = element_blank()) + # To remove gridlines
+  theme(panel.border = element_blank()) + # To remove plot border
+  scale_fill_manual(values = c(Eelgrass = "yellowgreen", Sand = "thistle3", Rock = "cornflowerblue"))  #Setting colors for categories
+  #+ guides(fill="none") # To remove legend for categories (these are shown with labels anyways)
+
+venn_wat
+
+ggsave(filename='../../Plots/Venn/16S_wat.png',venn_sed)
+
+saveRDS(venn_wat,"../../Plots/Venn/16S_wat.rds")
+
+wat<-within(wat,rm(sc))
+```
+
+```{r nmds sed habitat}
+
+  #NB., the number of points n should be n > 2k + 1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(sed, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+
+  site_scrs$habitat <- metadata$habitat[match(row.names(site_scrs), metadata$sshc)]
+  site_scrs$season <- metadata$season[match(row.names(site_scrs), metadata$sshc)]
+  
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  plots_hab<-list()
+  
+  cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
+
+  nmds_sed<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(metadata$habitat),
+                     labels = unique(metadata$habitat)) +
+  geom_point(alpha=1, size=2) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "NA", legend.text = element_text(size = 10), legend.title = element_blank(), axis.text = element_text(size = 8), axis.title.x = element_text(size = 8),axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+
+saveRDS(nmds_sed,"../../Plots/NMDS/NMDS_16S_hab_sed.rds")
+```
+
+##PERMANOVA analysis
+```{r permanova sed}
+
+dist<-vegdist(sed,method="jaccard")
+
+#Make new metadata table for sediment
+meta<-as.data.frame(row.names(sed))
+row.names(meta)<-meta$`row.names(sed)`
+meta$habitat<-metadata$habitat[match(row.names(meta),metadata$sshc)]
+meta<-within(meta,rm(`row.names(sed)`))
+
+#Test for homogeneity of multivariate dispersions
+b<-betadisper(dist,meta$habitat)
+permutest(b)
+
+# There is not homogeneity of dispersions
+
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ habitat, data = meta)
+permanova
+
+# There is a significant effect of habitat (R2=0.05, p=0.001)
+
+## Same test for season
+
+#Test for homogeneity of multivariate dispersions
+meta$season<-metadata$season[match(row.names(meta),metadata$sshc)]
+b<-betadisper(dist,meta$season)
+permutest(b)
+
+# There is homogeneity of dispersions
+
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ season, data = meta)
+permanova
+
+# There is a significant effect of season (R2=0.01, p=0.009)
+```
+
+```{r nmds wat habitat}
+
+  set.seed(123)
+  allmds_w <- metaMDS(wat, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs_w <- as.data.frame(scores(allmds_w, display = "sites"))
+
+  site_scrs_w$habitat <- metadata$habitat[match(row.names(site_scrs_w), metadata$sshc)]
+  site_scrs_w$season <- metadata$season[match(row.names(site_scrs_w), metadata$sshc)]
+  
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ habitat, data=site_scrs_w, FUN = mean)
+  segs <- merge(site_scrs_w, setNames(cent, c("habitat", "oNMDS1", "oNMDS2")), by = "habitat", sort=FALSE)
+
+  plots_hab_w<-list()
+  
+  nmds_wat<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2, colour = habitat, shape = season)) + 
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(metadata$habitat),
+                     labels = unique(metadata$habitat)) +
+  geom_point(alpha=1,size=2) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "NA", legend.text = element_text(size = 10), legend.title = element_blank(), axis.text = element_text(size = 8), axis.title.x = element_text(size = 8),axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+
+saveRDS(nmds_wat,"../../Plots/NMDS/NMDS_16S_hab_wat.rds")
+```
+
+##PERMANOVA analysis
+```{r permanova wat}
+
+dist<-vegdist(wat,method="jaccard")
+
+#Make new metadata table for water
+meta<-as.data.frame(row.names(wat))
+row.names(meta)<-meta$`row.names(wat)`
+meta$habitat<-metadata$habitat[match(row.names(meta),metadata$sshc)]
+meta<-within(meta,rm(`row.names(wat)`))
+
+#Test for homogeneity of multivariate dispersions
+b<-betadisper(dist,meta$habitat)
+permutest(b)
+
+# There is not homogeneity of dispersions
+
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ habitat, data = meta)
+permanova
+
+# There is a significant effect of habitat (R2=0.03, p=0.001)
+
+## Same test for season
+
+#Test for homogeneity of multivariate dispersions
+meta$season<-metadata$season[match(row.names(meta),metadata$sshc)]
+b<-betadisper(dist,meta$season)
+permutest(b)
+
+# There is homogeneity of dispersions
+
+#Perform a PERMANOVA test
+permanova<-adonis2(formula = dist ~ season, data = meta)
+permanova
+
+# There is a significant effect of season (R2=0.04, p=0.001)
+```
+
+```{r nmds sed salinity}
+
+## Get salinities
+coord<-read.table("../../Tekstfiler/Across_barcodes/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+metadata$new_name<-paste(metadata$season,metadata$cluster,metadata$habitat,sep="_")
+metadata$salinity <- coord$Salinity[match(metadata$new_name,row.names(coord))]
+
+site_scrs$salinity <- metadata$salinity[match(row.names(site_scrs), metadata$sshc)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs, FUN = mean)
+segs <- merge(site_scrs, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+# set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
+
+plots<-list()
+
+  nmds_sal<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2)) + 
+  scale_colour_stepsn(colours = rev(cols),
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1, size=2, aes(colour = salinity, shape = season)) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "NA", legend.text = element_text(size = 10), legend.title = element_text(size = 12), axis.text = element_text(size = 8), axis.title.x = element_text(size = 8),axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+  
+saveRDS(nmds_sal,"../../Plots/NMDS/NMDS_16S_sal_sed.rds")
+```
+
+```{r nmds wat salinity}
+
+## Get salinities
+site_scrs_w$salinity <- metadata$salinity[match(row.names(site_scrs_w), metadata$sshc)]
+
+cent <- aggregate(cbind(NMDS1, NMDS2) ~ salinity, data=site_scrs_w, FUN = mean)
+segs <- merge(site_scrs_w, setNames(cent, c("salinity", "oNMDS1", "oNMDS2")), by = "salinity", sort=FALSE)
+
+# set breaks and colours
+breaks <- c(7,11,17,22,27,33)
+cols <- RColorBrewer::brewer.pal(9, "RdYlBu")
+
+plots_wat<-list()
+
+  nmds_sal_w<-ggplot(site_scrs_w, aes(x=NMDS1, y=NMDS2)) + 
+  scale_colour_stepsn(colours = rev(cols),
+                    breaks = breaks,
+                    name = "Salinity") +
+  geom_point(alpha=1, size=2, aes(colour = salinity, shape = season)) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "NA", legend.text = element_text(size = 10), legend.title = element_text(size = 12), axis.text = element_text(size = 8), axis.title.x = element_text(size = 8),axis.title.y = element_blank(),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+  
+saveRDS(nmds_sal_w,"../../Plots/NMDS/NMDS_16S_sal_wat.rds")
+```
+
+```{r nmds both}
+
+##Convert to presence/absence
+both<-within(rep_agg,rm(Substrate))
+both[both>0]<-1
+
+#NB., the number of points n should be n > 2k + 1, and preferably higher in global non-metric MDS, and still higher in local NMDS. A k higher than 5 makes it difficult to interpret results
+
+## Parameter settings inspired by https://rpubs.com/CPEL/NMDS
+
+  set.seed(123)
+  allmds <- metaMDS(both, distance = "jaccard", autotransform = FALSE, maxit=999, k=3, trymax=250)
+
+  site_scrs <- as.data.frame(scores(allmds, display = "sites"))
+  site_scrs$Substrate <- metadata$substrate_type[match(row.names(site_scrs), metadata$sshc)]
+
+  cent <- aggregate(cbind(NMDS1, NMDS2) ~ Substrate, data=site_scrs, FUN = mean)
+  segs <- merge(site_scrs, setNames(cent, c("Substrate", "oNMDS1", "oNMDS2")), by = "Substrate", sort=FALSE)
+
+  cols <- c("sediment" = "#d8b365", "water" = "#5ab4ac")
+
+  nmds_both<-ggplot(site_scrs, aes(x=NMDS1, y=NMDS2, colour = Substrate)) + 
+  #geom_segment(data = segs, mapping = aes (xend = oNMDS1, yend= oNMDS2), alpha = 0.4) +
+  scale_color_manual(values = cols,
+                     name = "", breaks = unique(metadata$substrate_type),
+                     labels = unique(metadata$substrate_type)) +
+  #geom_point(data = cent, size = 5) +
+  geom_point(alpha=1,size=2) +
+  coord_fixed() +
+  theme_classic() + 
+  theme(legend.position = "NA", legend.text = element_text(size = 10), legend.title = element_blank(), axis.text = element_text(size = 8),axis.title.x = element_text(size = 8),axis.title.y = element_text(size = 8),plot.margin = unit(c(0,0.4,0,0.4), 'lines'))+
+  ggtitle("")+
+  #set breaks on x-axis
+scale_x_continuous(breaks = c(-1.0,0,1.0))+
+  #set breaks on y-axis
+scale_y_continuous(breaks = c(-1.5,-1,-0.5,0,0.5,1,1.5,2))
+
+saveRDS(nmds_both,"../../Plots/NMDS/NMDS_16S_both.rds")
+```
