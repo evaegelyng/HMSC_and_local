@@ -149,17 +149,3 @@ if(showOmega & !is.null(ma.omega)){
   vioplot(ma.omega,col=rainbow_hcl(nm),names=na.omega,ylim=c(0.9,1.1),main="psrf(omega)")
 }
 dev.off()
-
-#### Compute model fit ####
-
-nfolds = 2 #change the number of CV-folds
-nParallel = 4 #Set to 1 to disable parallel computing
-
-preds = computePredictedValues(fitTF)
-MF = evaluateModelFit(hM=fitTF, predY=preds)
-partition = createPartition(fitTF, nfolds = nfolds, column="Time_d") 
-preds = computePredictedValues(fitTF,partition=partition, nParallel = nParallel)
-MFCV = evaluateModelFit(hM=fitTF, predY=preds)
-WAIC = computeWAIC(fitTF)
-      
-save(MF,MFCV,WAIC,file = "sediment/18S/model_fit.Rdata")
