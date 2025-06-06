@@ -27,7 +27,7 @@ heatmap_wat<-grid.grabExpr(draw(Heatmap(as.matrix(nmds_water),
         name="Jost's D", 
         col = col_fun_water,
         cell_fun = function(j, i, x, y, width, height, fill) {
-          grid.text(sprintf("%.0f", mat_values_water[i, j]), x, y, gp = gpar(fontsize = 11))
+          grid.text(sprintf("%.0f", mat_values_water[i, j]), x, y, gp = gpar(fontsize = 11, fontface = 'bold'))
         }),show_heatmap_legend=TRUE))
 
 saveRDS(heatmap_wat,"../../../Plots/Heatmap_Djost_wat.rds")
@@ -56,7 +56,7 @@ heatmap_sed <- grid.grabExpr(draw(Heatmap(as.matrix(nmds_sediment),
         name="Jost's D", 
         col = col_fun_sediment,
         cell_fun = function(j, i, x, y, width, height, fill) {
-          grid.text(sprintf("%.0f", mat_values_sediment[i, j]), x, y, gp = gpar(fontsize = 11))
+          grid.text(sprintf("%.0f", mat_values_sediment[i, j]), x, y, gp = gpar(fontsize = 11, fontface = 'bold'))
         }),show_heatmap_legend=FALSE))
 
 saveRDS(heatmap_sed,"../../../Plots/Heatmap_Djost_sed.rds")

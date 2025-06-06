@@ -87,12 +87,55 @@ cdata2 <- ddply(b, c("season", "substrate_type", "habitat", "cluster", "variable
                mean = mean(value)
 )
 
+library(ggh4x)
+
+###############################################################################
+top_strips <- list(
+  element_rect(fill = "yellowgreen", colour = "black"), # eelgrass left
+  element_rect(fill = "cornflowerblue", colour = "black"), # rocks left
+  element_rect(fill = "thistle3", colour = "black"), # sand left
+  element_rect(fill = "yellowgreen", colour = "black"), # eelgrass right
+  element_rect(fill = "cornflowerblue", colour = "black"), # rocks right
+  element_rect(fill = "thistle3", colour = "black")  # sand right
+)
+right_strips <- list(
+  element_rect(fill = "#d8b365", colour = "black"), # sediment
+  element_rect(fill = "#5ab4ac", colour = "black"), # water
+  element_rect(fill = "orangered", colour = "black"), # autumn top
+  element_rect(fill = "lightyellow", colour = "black"), # spring top
+  element_rect(fill = "orangered", colour = "black"), # autumn bottom
+  element_rect(fill = "lightyellow", colour = "black") # spring bottom
+)
+###############################################################################
+
+cdata2_18S_uni <- cdata2
+saveRDS(cdata2_18S_uni, '../../RDS/cdata2_18S_uni.rds')
+
 uni_plot<-ggplot(data=cdata2, aes(x=as.factor(cluster), y=mean, fill=variable)) + 
   geom_bar(stat="identity", linewidth=0.05, width=1, colour="black") + 
   scale_fill_manual(breaks = c("Bacillariophyceae*","Cercozoa","Ciliophora","Coscinodiscophyceae*","Dinophyceae*", "Fragilariophyceae*","Others"), values = c("deepskyblue1","#66C2A5", "forestgreen","#FC8D62","#FFD92F","brown","#E5C494")) + 
-  facet_grid(substrate_type+season~habitat, scale="free_x", space="free_x")+ labs(title="", x ="", y = "Relative abundance", fill = "") + theme_bw() + 
-  scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
-  theme(legend.position = "top", axis.title = element_text(size=16), axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=14), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm")) +
+  facet_nested(
+        substrate_type + season ~ habitat,
+        scale = "free_x",
+        space = "free_x",
+        strip = strip_nested(
+            background_x = top_strips,
+            background_y = right_strips
+        )
+    ) +
+  labs(title="", x ="", y = "Relative abundance", fill = "") + 
+  theme_bw() + 
+  labs(title="", x ="Sampling station", y = "", fill = "") + 
+  theme_bw() + scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
+  theme(legend.position = "top", 
+        axis.title = element_text(size=16),
+        axis.text.y = element_text(size = 9), 
+        axis.text.x = element_text(angle = 90, 
+                                   hjust = 1, size=8, vjust=0.5, face = 'bold'), 
+        strip.text = element_text(size=16), 
+        legend.text=element_text(size=14), 
+        axis.ticks.length=unit(.04, "cm"), 
+        legend.key.size = unit(0.4, "cm"))+
   guides(fill = guide_legend(nrow = 2, byrow=TRUE))
 
 uni_plot
@@ -145,13 +188,34 @@ cdata2$phylum[cdata2$variable=="Others"]<-"Others"
 colourCount = length(unique(cdata2$variable))
 brewer.pal(colourCount,"Paired")
 
+cdata2_18S_mul <- cdata2
+saveRDS(cdata2_18S_mul, '../../RDS/cdata2_18S_mul.rds')
+
 m<-ggplot(data=cdata2, aes(x=as.factor(cluster), y=mean, fill=phylum)) + 
   geom_bar(stat="identity", linewidth=0.05, width=1, colour="black") + 
   scale_fill_manual(breaks = c("Annelida", "Arthropoda", "Mollusca", "Nematoda", "Phaeophyceae*","Platyhelminthes","Others"), values = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C","#FF7F00", "brown", "#E5C494")) + 
-  facet_grid(substrate_type+season~habitat, scale="free_x", space="free_x")+ 
-  labs(title="", x ="", y = "", fill = "") + 
+  facet_nested(
+        substrate_type + season ~ habitat,
+        scale = "free_x",
+        space = "free_x",
+        strip = strip_nested(
+            background_x = top_strips,
+            background_y = right_strips
+        )
+    ) +
+  labs(title="", x ="", y = "Relative abundance", fill = "") + 
+  theme_bw() + 
+  labs(title="", x ="Sampling station", y = "", fill = "") + 
   theme_bw() + scale_y_continuous(limits=c(0, 1.02), expand = c(0, 0)) +
-  theme(legend.position = "top", axis.title = element_text(size=16),axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 90, hjust = 1, size=8, vjust=0.5), strip.text = element_text(size=16), legend.text=element_text(size=14), axis.ticks.length=unit(.04, "cm"), legend.key.size = unit(0.4, "cm"))+
+  theme(legend.position = "top", 
+        axis.title = element_text(size=16),
+        axis.text.y = element_text(size = 9), 
+        axis.text.x = element_text(angle = 90, 
+                                   hjust = 1, size=8, vjust=0.5, face = 'bold'), 
+        strip.text = element_text(size=16), 
+        legend.text=element_text(size=14), 
+        axis.ticks.length=unit(.04, "cm"), 
+        legend.key.size = unit(0.4, "cm"))+
   guides(fill = guide_legend(nrow = 2, byrow=TRUE))
 
 m
