@@ -70,9 +70,9 @@ crs_clusters_text <- CRS(SRS_string = "EPSG:3035")
 clusters_text<-as.data.frame(spTransform(clusters_text, crs_clusters_text))
 
 #Add asterisks to stations where sampling was not complete
-clusters_unused$station <- c("2*","22**")
-clusters_text$station[2] <- " 2*"
-clusters_text$station[22] <- "   22**"
+# clusters_unused$station <- c("2*","22**")
+# clusters_text$station[2] <- " 2*"
+# clusters_text$station[22] <- "   22**"
 
 # Plot it all with north arrow and annotation scale
 denmark_plot<-ggplot(denmark) +
@@ -88,7 +88,7 @@ denmark_plot<-ggplot(denmark) +
   xlab("") +
   ylab("") +
   annotation_north_arrow(pad_x = unit(0.2, "cm"), pad_y = unit(0.7, "cm"), height = unit(0.7, "cm"), width = unit(0.7, "cm")) + # North arrow
-  annotation_scale() + # Scale bar
+  annotation_scale(location="tr", height = unit(0.5, "cm"),text_cex = 1, text_face = "bold") + # Scale bar
   scale_color_manual(name='',
                      breaks=c("Sampled locations","Planned, but not sampled"),
                      values=c("Sampled locations"="white", "Planned, but not sampled"="white"))+ 
@@ -96,4 +96,4 @@ denmark_plot<-ggplot(denmark) +
 
 denmark_plot
 
-ggsave("../Images_figure_1/Map_hab_emil.png", denmark_plot, height = 16, width = 22, units = "cm")
+ggsave("../Images_figure_1/Map_sampling_locations.png", denmark_plot, height = 16, width = 22, units = "cm")
