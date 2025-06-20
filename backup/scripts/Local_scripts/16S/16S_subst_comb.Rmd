@@ -183,6 +183,11 @@ And then a boxplot of habitat differences split into season:
 
 dat$season <- factor(dat$season, levels=c("spring", "autumn"))
 
+# Calculate sample size per group
+counts <- dat %>%
+  group_by(season, habitat) %>%
+  summarise(n = n(), .groups = "drop")
+
 cols <- c("sand"="thistle3","eelgrass"="yellowgreen","rocks"="cornflowerblue")
 
 boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) + 
@@ -190,17 +195,18 @@ boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) +
   scale_fill_manual(values = cols,
                      name = "", breaks = unique(d$habitat),
                      labels = unique(d$habitat)) +
-  xlab("") + ylab("MOTU richness")+
+  xlab("") + ylab("ASV richness")+
   facet_wrap(. ~ season, ncol = 4)+ 
   theme(legend.position = "NA" , text = element_text(size = 18))+
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_text(data = counts, aes(x = habitat, y = 4000, label = paste0("n = ", n)), inherit.aes = FALSE)+
   geom_pwc(aes(group = habitat),
            tip.length = 0,
            method = "dunn_test")
 
 boxplot_habitat_adj <- ggadjust_pvalue(
   boxplot_habitat_season, p.adjust.method = "bonferroni",
-  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
 
 saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/16S_habitat_comb.rds")
 ```

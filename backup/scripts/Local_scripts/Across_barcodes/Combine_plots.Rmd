@@ -18,16 +18,16 @@ euk <- readRDS("../../Plots/Boxplots/18S_habitat.rds")
 coi <- readRDS("../../Plots/Boxplots/COI_habitat.rds")
 pro <- readRDS("../../Plots/Boxplots/16S_habitat.rds")
 
-ggsave(file="../../Plots/Boxplots/All_hab.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=35,units="cm")
+ggsave(file="../../Plots/Boxplots/All_hab.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=40,units="cm")
 ```
 
 ```{r boxplot substrate}
 
-euk_sub <- readRDS("../Plots/Boxplots/18S_substrate.rds")
-coi_sub <- readRDS("../Plots/Boxplots/COI_substrate.rds")
-pro_sub <- readRDS("../Plots/Boxplots/16S_substrate.rds")
+euk_sub <- readRDS("../../Plots/Boxplots/18S_substrate.rds")
+coi_sub <- readRDS("../../Plots/Boxplots/COI_substrate.rds")
+pro_sub <- readRDS("../../Plots/Boxplots/16S_substrate.rds")
 
-ggsave(file="../Plots/Boxplots/All_substr.png",ggarrange(euk_sub,coi_sub,pro_sub,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"),width=20,height=35,units="cm")
+ggsave(file="../../Plots/Boxplots/All_substr.png",ggarrange(euk_sub,coi_sub,pro_sub,ncol=1,nrow=3,align="h",common.legend=TRUE,legend="top"),width=20,height=35,units="cm")
 ```
 
 ```{r nmds}
@@ -129,11 +129,11 @@ ggsave(file="../Plots/NMDS/NMDS_sal_comb.png",ggarrange(euk_comb,coi_comb,pro_co
 
 ```{r boxplot habitat comb}
 
-euk <- readRDS("../Plots/Boxplots/18S_habitat_comb.rds")
-coi <- readRDS("../Plots/Boxplots/COI_habitat_comb.rds")
-pro <- readRDS("../Plots/Boxplots/16S_habitat_comb.rds")
+euk <- readRDS("../../Plots/Boxplots/18S_habitat_comb.rds")
+coi <- readRDS("../../Plots/Boxplots/COI_habitat_comb.rds")
+pro <- readRDS("../../Plots/Boxplots/16S_habitat_comb.rds")
 
-ggsave(file="../Plots/Boxplots/All_hab_comb.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=35,units="cm")
+ggsave(file="../../Plots/Boxplots/All_hab_comb.png",ggarrange(euk,coi,pro,ncol=1,nrow=3,align="h"),width=30,height=35,units="cm")
 ```
 
 ```{r genetic variation}

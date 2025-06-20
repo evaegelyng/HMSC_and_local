@@ -226,13 +226,12 @@ dunn_res_hab
 From these comparisons it looks like there is a higher richness in rocks compared to either sand or eelgrass.
 
 Lets visualise these differences on the box plot, first across seasons:
-*Note*: unfortunately when using facet_wrap() as is done in the next plot with season included as a grouping variable, you cannot use a built-in Tukey HSD test and account for all comparisons (it only accounts for comparisons in one plot of the facets) for that reason I have chosen a t-test with a bonferroni correction. It is a little conservative but with a small number of comparisons it is argued as a preferred option and makes almost no difference from Tukey HSD.
 
 ```{r grouped boxplot w. sig diff w.o. season, fig.width = 10, fig.height = 7}
 
 dat$Substrate <- factor(dat$Substrate)
 
-ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
+boxplot_habitat<- ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) + 
     geom_boxplot() +
   scale_fill_manual(values = c('#d8b365','#5ab4ac'),
                      name = "", breaks = c("sediment","water"),
@@ -240,8 +239,13 @@ ggplot(dat, aes(x=habitat, y=rich, fill=Substrate)) +
   xlab("") + ylab("ASV richness")+
   theme(legend.position = "right" , text = element_text(size = 18))+
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
-  geom_signif(comparisons = list(c("eelgrass", "sand"), c("eelgrass", "rocks") ,c("sand", "rocks")), 
-              map_signif_level=TRUE, test = t.test, step_increase = 0.05, tip_length = 0)
+ geom_pwc(aes(group = habitat),
+           tip.length = 0,
+           method = "dunn_test")
+
+ggadjust_pvalue(
+  boxplot_habitat, p.adjust.method = "bonferroni",
+  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
 ```
 And then a boxplot of habitat differences split into season and substrate:
 
@@ -249,23 +253,31 @@ And then a boxplot of habitat differences split into season and substrate:
 
 dat$season <- factor(dat$season , levels=c("spring", "autumn"))
 
+# Calculate sample size per group
+counts <- dat %>%
+  group_by(Substrate, season, habitat) %>%
+  summarise(n = n(), .groups = "drop")
+
 boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) + 
-  geom_boxplot() +
+    geom_boxplot() +
   scale_fill_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
                      name = "", breaks = c("eelgrass","rocks", "sand"),
                      labels = c("eelgrass","rocks", "sand")) +
   xlab("") + ylab("ASV richness")+
   facet_wrap(Substrate ~ season, ncol = 4)+ 
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
-   geom_pwc(aes(group = habitat),
+  geom_text(data = counts, aes(x = habitat, y = 3350, label = paste0("n = ", n)), inherit.aes = FALSE)+
+  geom_pwc(aes(group = habitat),
            tip.length = 0,
-           method = "t_test",hide.ns=TRUE)+
+           method = "dunn_test",hide.ns = FALSE)+
   theme_classic(base_size = 18)+
   theme(legend.position = "NA" , text = element_text(size = 18))
 
 boxplot_habitat_adj <- ggadjust_pvalue(
-  boxplot_habitat_season, p.adjust.method = "holm",
-  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+  boxplot_habitat_season, p.adjust.method = "bonferroni",
+  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
+
+boxplot_habitat_adj
 
 saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/16S_habitat.rds")
 ```
@@ -289,7 +301,7 @@ qqPlot(res_aov_rich_subst$residuals, id = FALSE)
 Plotting the residuals from the anova it seems that the residuals are not normally distributed.
 So we will run a Kruskal-Wallis test like before
 
-```{r Kruskal-Wallis test habitat}
+```{r Kruskal-Wallis test substrate}
 
 kruskal.test(rich ~ Substrate,
   data = dat)
@@ -309,7 +321,7 @@ boxplot_substr <- ggplot(dat, aes(x=Substrate, y=rich, fill = habitat)) +
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
   geom_pwc(aes(group = Substrate),
            tip.length = 0,
-           method = "t_test")
+           method = "dunn_test")
 
 ggadjust_pvalue(
   boxplot_substr, p.adjust.method = "bonferroni",
@@ -329,13 +341,16 @@ boxplot_substr_season <- ggplot(dat, aes(x=Substrate, y=rich, fill = habitat)) +
   facet_grid(. ~ season)+ 
   theme(legend.position = "NA" , text = element_text(size = 18))+
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_text(data = counts, aes(x = Substrate, y = 3350, label = paste0("n = ", n)), inherit.aes = FALSE)+
   geom_pwc(aes(group = Substrate),
            tip.length = 0,
-           method = "t_test")
+           method = "dunn_test")
 
 boxplot_substr_adj <- ggadjust_pvalue(
   boxplot_substr_season, p.adjust.method = "bonferroni",
-  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
+
+boxplot_substr_adj
 
 saveRDS(boxplot_substr_adj,"../../Plots/Boxplots/16S_substrate.rds")
 ```

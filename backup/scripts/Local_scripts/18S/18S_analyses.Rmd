@@ -247,6 +247,11 @@ And then a boxplot of habitat differences split into season
 
 dat$season <- factor(dat$season, levels=c("spring", "autumn"))
 
+# Calculate sample size per group
+counts <- dat %>%
+  group_by(Substrate, season, habitat) %>%
+  summarise(n = n(), .groups = "drop")
+
 boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) + 
   geom_boxplot() +
   scale_fill_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
@@ -254,16 +259,17 @@ boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) +
                      labels = c("eelgrass","rocks", "sand")) +
   xlab("") + ylab("MOTU richness")+
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_text(data = counts, aes(x = habitat, y = 1275, label = paste0("n = ", n)), inherit.aes = FALSE)+
   facet_wrap(Substrate ~ season, ncol = 4)+
     geom_pwc(aes(group = habitat),
            tip.length = 0,
-           method = "t_test",hide.ns = TRUE)+
+           method = "t_test",hide.ns = FALSE)+
   theme_classic(base_size = 18)+
   theme(legend.position = "top" , text = element_text(size = 18))
 
 boxplot_habitat_adj <- ggadjust_pvalue(
   boxplot_habitat_season, p.adjust.method = "bonferroni",
-  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
 
 saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/18S_habitat.rds")
 ```
@@ -324,13 +330,14 @@ boxplot_substr_season <- ggplot(dat, aes(x=Substrate, y=rich, fill = habitat)) +
   facet_grid(. ~ season)+ 
   theme(legend.position = "top" , text = element_text(size = 18))+
   geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  geom_text(data = counts, aes(x = Substrate, y = 1275, label = paste0("n = ", n)), inherit.aes = FALSE)+
   geom_pwc(aes(group = Substrate),
            tip.length = 0,
            method = "t_test")
 
 boxplot_substr_adj <- ggadjust_pvalue(
   boxplot_substr_season, p.adjust.method = "bonferroni",
-  label = "{p.adj.signif}") #change to {p.adj.format} to get actual values
+  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
 
 boxplot_substr_adj
 

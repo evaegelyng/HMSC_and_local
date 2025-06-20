@@ -23,19 +23,19 @@ library(RColorBrewer)
 ```{r load datasets}
 
 ## Get COI dataset
-COSQ_rare2_70 <- readRDS("../RDS/COI_no_c2_3reps.rds")
+COSQ_rare2_70 <- readRDS("../../RDS/COI_no_c2_3reps.rds")
 
 ## Import 18S dataset
-DADAwang1<-readRDS("../RDS/18S_no_c2_3reps.rds")
+DADAwang1<-readRDS("../../RDS/18S_no_c2_3reps.rds")
 
 ## Import 16S dataset
-Prok<-readRDS("../RDS/16S_no_c2_3reps.rds")
+Prok<-readRDS("../../RDS/16S_no_c2_3reps.rds")
 
 ## Load raw 16S table
-otu_mat<-read.table("../Tekstfiler/16S/cleaned_otu_silva_EES3.txt", sep="\t", header=T, row.names=1,check.names=F)
+otu_mat<-read.table("../../Tekstfiler/16S/cleaned_otu_silva_EES3.txt", sep="\t", header=T, row.names=1,check.names=F)
 
 ## Import overview of uni-/multicellularity for eukaryotes
-cell<-read.table("../Tekstfiler/Across_barcodes/Supergroups_and_cellularity.tsv",sep="\t", header=T)
+cell<-read.table("../../Tekstfiler/Across_barcodes/Supergroups_and_cellularity.tsv",sep="\t", header=T)
 ```
 
 ```{r prepare COI}
@@ -130,7 +130,7 @@ p<-ggplot(rich_long, aes(x = rich_prok, y = OTU_richness, colour = Marker)) +
                      labels = c("COI_uni","18S_uni")) +
   geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
    stat_poly_line() +
-   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+   stat_poly_eq(use_label(c("n","R2", "P"), sep = "*\"; \"*"),small.p = getOption("ggpmisc.small.p", default = TRUE),p.digits=4,label.x=c(0.05,0.05,0.05),label.y=c(1,0.95,0.90))+
   labs(x="Richness of prokaryotes", y="Richness of unicellular eukaryotes")+ 
   theme_classic()+
   theme(legend.position = "NA")
@@ -194,7 +194,7 @@ q<-ggplot(rich_long, aes(x = rich_prok, y = OTU_richness, colour = Marker)) +
                      labels = c("COI","18S")) +
   geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
    stat_poly_line() +
-   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+   stat_poly_eq(use_label(c("n","R2", "P"), sep = "*\"; \"*"),small.p = getOption("ggpmisc.small.p", default = TRUE),p.digits=4,label.x=c(0.05,0.05,0.05),label.y=c(1,0.95,0.90))+
   labs(x="Richness of prokaryotes", y="Richness of multicellular eukaryotes")+
   theme_classic()+
   theme(legend.position = "NA")
@@ -227,7 +227,7 @@ r<-ggplot(rich_euk_long, aes(x = Unicellular, y = Multicellular, colour = Marker
                      labels = c("COI","18S")) +
   geom_smooth(method = "lm", se = FALSE, linewidth = .5) + #> `geom_smooth()` using formula 'y ~ x'
    stat_poly_line() +
-   stat_poly_eq(use_label(c("R2", "P"), sep = "*\"; \"*"),label.x=c(0.2,0.2,0.2),label.y=c(1,0.95,0.90))+
+   stat_poly_eq(use_label(c("n","R2", "P"), sep = "*\"; \"*"),small.p = getOption("ggpmisc.small.p", default = TRUE),p.digits=4,label.x=c(0.05,0.05,0.05),label.y=c(1,0.95,0.90))+
   labs(x="Richness of unicellular eukaryotes", y="Richness of multicellular eukaryotes")+
   theme_classic()+
   theme(legend.position = "NA")
@@ -237,7 +237,7 @@ r
 ```{r combine plots}
 
 rich_plots <- grid.arrange(r,q,p,nrow=1,ncol=3)
-ggsave(file="../Plots/Scatter_rich/Cellularity_rich.png",rich_plots,width=30,height=15,units="cm")
+ggsave(file="../../Plots/Scatter_rich/Cellularity_rich.png",rich_plots,width=30,height=15,units="cm")
 ```
 
 
