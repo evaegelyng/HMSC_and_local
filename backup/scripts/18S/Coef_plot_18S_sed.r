@@ -41,7 +41,7 @@ names(taxonomy)[3] <- "phylum"
 #Credibility interval addition
 postBeta = getPostEstimate(model,q =c(0.025,0.975), parName="Beta")
 
-supportLevel=0.95
+supportLevel=0.80
 mbeta<- postBeta$mean
 betaP=postBeta$support
 toPlot = mbeta
@@ -136,7 +136,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/18S/18S_coef_sed_hab.png",height=9,width=15)
+ggsave(p,file="results/sediment/18S/18S_coef_sed_hab_s80.png",height=9,width=15)
 
 
 # Extract presence only (richness) data
@@ -182,7 +182,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/18S/18S_coef_sed_hab_rich.png",height=9,width=15)
+ggsave(p,file="results/sediment/18S/18S_coef_sed_hab_rich_s80.png",height=9,width=15)
 
 # Plot for salinity
 sal <- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"poly",negate=F))
@@ -221,4 +221,4 @@ p <- sal%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/sediment/18S/18S_coef_sed_sal_rich.png",height=9,width=15)
+ggsave(p,file="results/sediment/18S/18S_coef_sed_sal_rich_s80.png",height=9,width=15)

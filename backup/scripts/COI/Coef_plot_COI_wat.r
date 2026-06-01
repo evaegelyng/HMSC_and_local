@@ -15,10 +15,15 @@ model <- readRDS("results/Water/COI/fitTF.rds")
 ################################################################################
 ##  Specify taxonomic reference database     ###################################
 ################################################################################
+#Load rarefied dataset
+COSQ_rare<-readRDS("data/COI_no_c2_3reps.rds")
+# Extracting taxonomy table from phyloseq object
+taxa<-data.frame(tax_table(COSQ_rare))
+
 taxonomy <- as.data.frame(colnames(model$Y))
 names(taxonomy) <- "class"
 taxonomy$class_name <- sub("_[^_]+$", "", taxonomy$class)
-taxonomy$new_phylum<-sgroups$new_phylum[match(taxonomy$class_name,sgroups$class)]
+taxonomy$new_phylum<-taxa$new_phylum[match(taxonomy$class_name,taxa$new_class)]
 
 # Load table with supergroups
 sgroups <- read.table("data/Supergroups_and_cellularity.tsv", sep='\t', header=T, comment="")
@@ -36,7 +41,7 @@ names(taxonomy)[3] <- "phylum"
 #Credibility interval addition
 postBeta = getPostEstimate(model,q =c(0.025,0.975), parName="Beta")
 
-supportLevel=0.95
+supportLevel=0.80
 mbeta<- postBeta$mean
 betaP=postBeta$support
 toPlot = mbeta
@@ -133,7 +138,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/Water/COI/COI_coef_wat_hab.png",height=9,width=15)
+ggsave(p,file="results/Water/COI/COI_coef_wat_hab_s80.png",height=9,width=15)
 
 
 # Extract presence only (richness) data
@@ -179,7 +184,7 @@ p <- hab%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/Water/COI/COI_coef_wat_hab_rich.png",height=9,width=15)
+ggsave(p,file="results/Water/COI/COI_coef_wat_hab_rich_s80.png",height=9,width=15)
 
 # Plot for salinity
 sal <- coef_plot_p %>% group_by(variable) %>% filter(str_starts(variable,"poly",negate=F))
@@ -218,4 +223,4 @@ p <- sal%>%
                     ymax = upper_cred$Betapar, 
                     color = variable), width = 0.5, linewidth = 0.5)
 
-ggsave(p,file="results/Water/COI/COI_coef_wat_sal_rich.png",height=9,width=15)
+ggsave(p,file="results/Water/COI/COI_coef_wat_sal_rich_s80.png",height=9,width=15)

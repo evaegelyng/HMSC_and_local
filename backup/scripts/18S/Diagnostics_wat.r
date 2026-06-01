@@ -56,6 +56,11 @@ ma.rho = NULL
 na.rho = NULL
     
 mpost = convertToCodaObject(fitTF, spNamesNumbers = c(T,F), covNamesNumbers = c(T,F))
+
+sink("Water/18S/alpha.txt")
+print(summary(mpost$Alpha[[1]]))
+sink()
+
 nr = fitTF$nr
 if(showBeta){
   psrf = gelman.diag(mpost$Beta,multivariate=FALSE)$psrf

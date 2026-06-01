@@ -34,7 +34,7 @@ distsea<-read.table("data/dist_by_sea.txt", sep="\t", header=T)
 DT1.2<-tax_glom(COSQ_w, taxrank="new_class")
 
 # Extracting taxonomy table from phyloseq object
-#taxa<-data.frame(tax_table(DT1.2))
+taxa<-data.frame(tax_table(DT1.2))
 
 # Preparing richness calculations
 otuo<-data.frame(otu_table(COSQ_w))
