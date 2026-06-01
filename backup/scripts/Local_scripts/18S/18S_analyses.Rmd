@@ -44,8 +44,14 @@ taxa<-read.table("../../Tekstfiler/18S/tax_rarefy.txt", sep="\t", row.names = 1,
 ##Get metadata
 metadata<-read.table("../../Tekstfiler/18S/metadata_rarefy.txt", sep="\t", header=T)
 
+## Get salinities
+coord<-read.table("../../Tekstfiler/Across_barcodes/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
+metadata$new_name<-paste(metadata$season,metadata$cluster,metadata$habitat,sep="_")
+metadata$salinity <- coord$Salinity[match(metadata$new_name,row.names(coord))]
+
 #Create extra metadata variables
 metadata$sshc<-paste(metadata$substrate_type, metadata$season, metadata$habitat, metadata$cluster, sep="_")
+
 ##Including the number of field reps per sample
 bio_reps<-metadata %>% group_by(sshc) %>% dplyr::summarise(n=n())
 metadata$bio_reps<-bio_reps$n[match(metadata$sshc,bio_reps$sshc)]
@@ -143,6 +149,7 @@ rep_6hab$rich<-rowSums(rep_6hab)
 rep_6hab$Substrate<-metadata$substrate_type[match(row.names(rep_6hab),metadata$sshc)]
 rep_6hab$habitat<-metadata$habitat[match(row.names(rep_6hab),metadata$sshc)]
 rep_6hab$season<-metadata$season[match(row.names(rep_6hab),metadata$sshc)]
+rep_6hab$salinity<-metadata$salinity[match(row.names(rep_6hab),metadata$sshc)]
 
 is_outlier <- function(x) {
   return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
@@ -211,6 +218,23 @@ Because of multiple testing we will do that with a Tukey's Honest Significant Di
 
 TukeyHSD(res_aov_rich_hab)
 ```
+For comparibility with COI and 16S, we calculate differences in medians rather than means
+```{r differences in median}
+
+# First determine median richness for rock habitat
+median(dat$rich[dat$habitat == "rocks"]) # 858 OTUs
+
+# Now calculate pairwise differences in median richness
+pairs <- combn(unique(dat$habitat), 2, simplify = FALSE)
+
+for (p in pairs) {
+  g1 <- dat$rich[dat$habitat == p[1]]
+  g2 <- dat$rich[dat$habitat == p[2]]
+  
+  diff_medians <- median(g1) - median(g2)
+  cat(paste0(p[1], " vs ", p[2], ": median difference = ", diff_medians, "\n"))
+}
+```
 
 From these comparisons it looks like there is a higher richness in rocks compared to either sand or eelgrass but no significant difference in richness between sand and eelgrass. This is illustrated in the plotted output below:
 ```{r Tukey HSD test output plot }
@@ -258,7 +282,7 @@ boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) +
                      name = "", breaks = c("eelgrass","rocks", "sand"),
                      labels = c("eelgrass","rocks", "sand")) +
   xlab("") + ylab("MOTU richness")+
-  geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
+  #geom_text_repel(aes(label=cluster),na.rm=TRUE,nudge_y=0.05)+
   geom_text(data = counts, aes(x = habitat, y = 1275, label = paste0("n = ", n)), inherit.aes = FALSE)+
   facet_wrap(Substrate ~ season, ncol = 4)+
     geom_pwc(aes(group = habitat),
@@ -269,12 +293,34 @@ boxplot_habitat_season <- ggplot(dat, aes(x=habitat, y=rich, fill=habitat)) +
 
 boxplot_habitat_adj <- ggadjust_pvalue(
   boxplot_habitat_season, p.adjust.method = "bonferroni",
-  label = "{p.adj.format}") #change to {p.adj.format} to get actual values
+  label = "{p.adj.format}") 
+
+boxplot_habitat_adj
 
 saveRDS(boxplot_habitat_adj,"../../Plots/Boxplots/18S_habitat.rds")
 ```
 From the plot we can see that there is a significant difference in richness between rocks and sand and rocks and eelgrass in both spring and autumn and that those differences survive correction for multiple testing. Richness is still not significantly different between eelgrass and sand.
 
+Now we will make a corresponding plot for richness as a function of salinity
+```{r grouped scatter plots w. sig diff, fig.width = 12, fig.height = 8}
+
+scatter_habitat_season <- ggplot(dat, aes(x=salinity, y=rich, colour=habitat)) + 
+  geom_point(size=3,aes(color=habitat)) +
+  scale_color_manual(values = c("yellowgreen", "cornflowerblue","thistle3"),
+                     name = "", breaks = c("eelgrass","rocks", "sand"),
+                     labels = c("eelgrass","rocks", "sand")) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 2) + #> `geom_smooth()` using formula 'y ~ x'
+   stat_poly_line() +
+stat_poly_eq(use_label(c("n","R2", "P"), sep = "*\"; \"*"),small.p = getOption("ggpmisc.small.p", default = TRUE),p.digits=4,label.x=c(0.05,0.05,0.05),label.y=c(1,0.95,0.90))+
+  xlab("") + ylab("MOTU richness")+
+  facet_wrap(Substrate ~ season, ncol = 4)+
+  theme_classic(base_size = 18)+
+  theme(legend.position = "top" , text = element_text(size = 18))
+
+scatter_habitat_season
+
+saveRDS(scatter_habitat_season,"../../Plots/Scatter_rich/Salinity/18S_salinity_facet.rds")
+```
 
 Next up we are going to test if there are significant differences in ASV richness across substrates i.e. water and sediment.
 
@@ -554,6 +600,82 @@ saveRDS(venn_wat,"../../Plots/Venn/18S_wat.rds")
 
 wat<-within(wat,rm(sc))
 ```
+```{r venn sed salinity}
+
+# Subset to each salinity group
+sed_3hab$sch<-paste(sed_3hab$sc,sed_3hab$habitat,sep="_")
+sed_3hab$sal_group<-coord$sal_group[match(sed_3hab$sch,rownames(salinity))]
+  
+low<-sed_3hab[sed_3hab$sal_group=="1",]
+med<-sed_3hab[sed_3hab$sal_group=="2",]
+high<-sed_3hab[sed_3hab$sal_group=="3",]
+
+low<-within(low,rm(habitat,sc,sch,sal_group))
+med<-within(med,rm(habitat,sc,sch,sal_group))
+high<-within(high,rm(habitat,sc,sch,sal_group))
+
+# Make species list for each salinity group
+low<-low[,colSums(low)>0]
+low_sp<-colnames(low)
+
+med<-med[,colSums(med)>0]
+med_sp<-colnames(med)
+
+high<-high[,colSums(high)>0]
+high_sp<-colnames(high)
+
+sed_list <- list(Low = low_sp,Medium = med_sp,High = high_sp)
+
+venn_sed <- ggeulerr(sed_list[1:3]) +
+  theme_bw(base_size = 14) + # For white background
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +  # To remove axis text, titles and ticks
+  theme(panel.grid = element_blank()) + # To remove gridlines
+  theme(panel.border = element_blank()) + # To remove plot border
+  scale_fill_manual(values = c(Low = "red", Medium = "green", High = "blue"))  #Setting colors for categories
+  #+ guides(fill="none") # To remove legend for categories (these are shown with labels anyways)
+
+venn_sed
+
+saveRDS(venn_sed,"../../Plots/Venn/18S_sal_sed.rds")
+```
+```{r venn wat salinity}
+
+# Subset to each salinity group
+wat_3hab$sch<-paste(wat_3hab$sc,wat_3hab$habitat,sep="_")
+wat_3hab$sal_group<-coord$sal_group[match(wat_3hab$sch,rownames(salinity))]
+  
+low<-wat_3hab[wat_3hab$sal_group=="1",]
+med<-wat_3hab[wat_3hab$sal_group=="2",]
+high<-wat_3hab[wat_3hab$sal_group=="3",]
+
+low<-within(low,rm(habitat,sc,sch,sal_group))
+med<-within(med,rm(habitat,sc,sch,sal_group))
+high<-within(high,rm(habitat,sc,sch,sal_group))
+
+# Make species list for each salinity group
+low<-low[,colSums(low)>0]
+low_sp<-colnames(low)
+
+med<-med[,colSums(med)>0]
+med_sp<-colnames(med)
+
+high<-high[,colSums(high)>0]
+high_sp<-colnames(high)
+
+wat_list <- list(Low = low_sp,Medium = med_sp,High = high_sp)
+
+venn_sed <- ggeulerr(wat_list[1:3]) +
+  theme_bw(base_size = 14) + # For white background
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +  # To remove axis text, titles and ticks
+  theme(panel.grid = element_blank()) + # To remove gridlines
+  theme(panel.border = element_blank()) + # To remove plot border
+  scale_fill_manual(values = c(Low = "red", Medium = "green", High = "blue"))  #Setting colors for categories
+  #+ guides(fill="none") # To remove legend for categories (these are shown with labels anyways)
+
+venn_sed
+
+saveRDS(venn_sed,"../../Plots/Venn/18S_sal_wat.rds")
+```
 
 ```{r nmds sed habitat}
 
@@ -708,11 +830,6 @@ permanova
 ```
 
 ```{r nmds sed salinity}
-
-## Get salinities
-coord<-read.table("../../Tekstfiler/Across_barcodes/merged_metadata_230427.txt", sep="\t", row.names=1, header=T, check.names=FALSE)
-metadata$new_name<-paste(metadata$season,metadata$cluster,metadata$habitat,sep="_")
-metadata$salinity <- coord$Salinity[match(metadata$new_name,row.names(coord))]
 
 site_scrs$salinity <- metadata$salinity[match(row.names(site_scrs), metadata$sshc)]
 

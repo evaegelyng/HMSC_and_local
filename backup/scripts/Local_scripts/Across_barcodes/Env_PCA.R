@@ -8,10 +8,10 @@ library(ggfortify)
 library(ggpubr)
 
 # Read variable dataframes:
-dare<- read.table("../Tekstfiler/metadata_spat_extended.txt" ,sep='\t',header=TRUE)
-fsed<- read.table("../Tekstfiler/sed_metadata.txt", sep="\t", header=T)
-fwat<-read.table("../Tekstfiler/wat_metadata.txt", sep="\t", header=T)
-#dare$Depth<-fwat$CTD_depth[match(row.names(dare),fwat$snch)]
+dare<- read.table("../../Tekstfiler/Across_barcodes/metadata_spat_extended.txt" ,sep='\t',header=TRUE)
+fsed<- read.table("../../Tekstfiler/Across_barcodes/sed_metadata.txt", sep="\t", header=T)
+fwat<-read.table("../../Tekstfiler/Across_barcodes/wat_metadata.txt", sep="\t", header=T)
+
 dare$d18O<- fwat$d18O[match(row.names(dare),fwat$snch)]
 dare$d2H<- fwat$d12H[match(row.names(dare),fwat$snch)]
 dare$Density<- fsed$Density[match(row.names(dare),fsed$snch)]
@@ -40,7 +40,6 @@ PCA_df_sed<- dare  %>%
 
 # Check that the correct variables remain
 names(PCA_df_sed)
-
 
 # Remove unwanted variables for water PCA
 PCA_df_Water<-dare  %>%
@@ -142,7 +141,7 @@ plots<-list()
 plots[[1]]<-p
 plots[[2]]<-q
 
-ggsave(file="../Plots/Env_plots/PCA.png",ggarrange(plots[[1]],plots[[2]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="top"),width=30,height=15,units="cm")
+ggsave(file="../../Plots/Env_plots/PCA.png",ggarrange(plots[[1]],plots[[2]],ncol=2,nrow=1,align="h",common.legend=TRUE,legend="top"),width=30,height=15,units="cm")
 
 
 #################################

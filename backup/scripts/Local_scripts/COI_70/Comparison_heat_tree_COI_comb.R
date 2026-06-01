@@ -25,6 +25,10 @@ tax$supergroup[tax$new_phylum=="Bacillariophyta_NA"]<-"SAR_Stramenopiles"
 # Extract needed columns
 tax <- tax[,c("supergroup","new_phylum","new_class")]
 
+# Check for "NAs"
+unique(tax$supergroup)
+# There are "NAs" - will remove them in the final table for the heattree matrix
+
 ## Get sample data
 sam<-data.frame(sample_data(DADAwang1))
 
@@ -45,6 +49,9 @@ otus_tax <- otus_t %>%
 
 otus_full_tax <- otus_tax
 otus_full_tax[,1:306] <- as.numeric(unlist(otus_full_tax[,1:306]))
+
+# Remove OTUs not assigned to a class
+otus_full_tax <- otus_full_tax[!is.na(otus_full_tax$new_class),]
 
 #-------------------------------------------------------------------------------
 #              HEAT TREE COMPARISON  relative read abundance                 
